@@ -1,0 +1,87 @@
+{
+  "expo": {
+    "name": "Student Productivity",
+    "slug": "student-productivity",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "description": "A comprehensive productivity app for students to manage their studies, track progress, create flashcards, take notes, and stay organized.",
+    "keywords": [
+      "student",
+      "productivity",
+      "study",
+      "education",
+      "planner",
+      "notes",
+      "flashcards",
+      "tracker"
+    ],
+    "privacy": "public",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.studentproductivity.app",
+      "buildNumber": "2",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to capture images for notes and flashcards.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to record audio notes.",
+        "NSPhotoLibraryUsageDescription": "This app accesses your photo library to save and retrieve images for notes and flashcards."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.studentproductivity.app",
+      "versionCode": 2,
+      "edgeToEdgeEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Student Productivity to access your camera to capture images for notes and flashcards."
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Student Productivity to access your photos to save and retrieve images.",
+          "savePhotosPermission": "Allow Student Productivity to save photos to your library."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "be14ac5d-bec7-4154-aaa2-d476ee217b79"
+      }
+    }
+  }
+}

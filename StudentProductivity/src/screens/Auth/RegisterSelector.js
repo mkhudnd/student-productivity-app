@@ -1,0 +1,22 @@
+loginButtonText: {
+  fontSize: 16,
+  fontWeight: '600',
+  color: theme.colors.primary,
+},
+questionSelector: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: theme.colors.background,
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: theme.colors.background,
+  paddingHorizontal: 16,
+  minHeight: 56,
+},
+questionText: {
+  flex: 1,
+  fontSize: 16,
+  color: theme.colors.text,
+  paddingVertical: 16,
+  paddingHorizontal: 8,
+}, 
