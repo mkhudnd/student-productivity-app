@@ -224,11 +224,6 @@ This project showcases modern mobile development practices and is open for colla
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## 📝 Documentation
-
-- **[User Manual](USER_MANUAL.md)**: Comprehensive 40+ page usage guide
-- **[Executive Summary](EXECUTIVE_SUMMARY.md)**: Project overview and technical achievements
-- **[Development Guide](CAPSTONE_SDLC.md)**: Software development lifecycle documentation
 
 ## 👨‍💻 Developer
 
@@ -242,10 +237,5 @@ This project demonstrates proficiency in:
 - Data persistence and state management
 - Production-ready app development
 
-## 📄 License
-
-This project is licensed under the 0BSD License - see the [LICENSE](LICENSE) file for details.
-
----
 
 *Built with ❤️ using React Native and Expo* 
