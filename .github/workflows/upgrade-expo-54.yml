@@ -35,13 +35,14 @@ jobs:
         run: npm ci
 
       - name: Upgrade Expo SDK and compatible packages
-        run: npx expo install expo@^54.0.0 --fix
+        run: |
+          npx expo install expo@^54.0.0 --fix
+          npx expo install expo-asset expo-constants expo-system-ui react-native-worklets
 
       - name: Apply SDK 54 compatibility edits
         run: |
           node <<'NODE'
           const fs = require('fs');
-          const path = require('path');
 
           const files = [
             'src/storage/fileStorage.js',
@@ -61,17 +62,24 @@ jobs:
 
           const appPath = 'app.json';
           const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          delete app.expo.keywords;
+          delete app.expo.privacy;
           if (app.expo?.android) {
             app.expo.android.edgeToEdgeEnabled = true;
           }
           fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
           NODE
 
-      - name: Regenerate Android native project
-        run: npx expo prebuild --clean --platform android --no-install
+      - name: Move to Expo generated native projects
+        run: rm -rf android
 
       - name: Validate upgraded project
         run: npx expo-doctor@latest
+
+      - name: Verify Android native generation
+        run: |
+          npx expo prebuild --clean --platform android --no-install
+          rm -rf android
 
       - name: Bundle Android JavaScript
         run: npx expo export --platform android --output-dir dist
@@ -80,7 +88,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json app.json src android
+          git pull --rebase origin launch-hardening-v1
+          git add -A package.json package-lock.json app.json src android
           if git diff --cached --quiet; then
             echo "No SDK upgrade changes to commit"
             exit 0
