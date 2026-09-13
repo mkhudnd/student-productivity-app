@@ -1,0 +1,109 @@
+name: Upgrade Expo SDK 55
+
+on:
+  push:
+    branches:
+      - launch-hardening-v1
+    paths:
+      - .github/workflows/upgrade-expo-55.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: StudentProductivity
+
+    steps:
+      - name: Checkout launch branch
+        uses: actions/checkout@v4
+        with:
+          ref: launch-hardening-v1
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.4
+          cache: npm
+          cache-dependency-path: StudentProductivity/package-lock.json
+
+      - name: Install current dependencies
+        run: npm ci
+
+      - name: Remove unfinished media features
+        run: npm uninstall expo-av expo-audio expo-camera expo-media-library expo-document-picker expo-print
+
+      - name: Upgrade Expo SDK and compatible packages
+        run: |
+          npx expo install expo@^55.0.0 --fix
+          npx expo install expo-asset expo-constants expo-system-ui react-native-worklets babel-preset-expo
+
+      - name: Apply launch compatibility edits
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          const deckPath = 'src/screens/Flashcards/DeckEditorScreen.js';
+          if (fs.existsSync(deckPath)) {
+            let source = fs.readFileSync(deckPath, 'utf8');
+            source = source.replace(/^import \{ Audio \} from ['\"]expo-av['\"];?\r?\n/m, '');
+            fs.writeFileSync(deckPath, source);
+          }
+
+          const appPath = 'app.json';
+          const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          const expo = app.expo;
+
+          // SDK 55 is New Architecture only.
+          delete expo.newArchEnabled;
+
+          // These permissions described unfinished media functionality that is not
+          // currently implemented. Remove them for a smaller, clearer launch build.
+          if (expo.ios) {
+            delete expo.ios.infoPlist;
+          }
+          if (expo.android) {
+            delete expo.android.permissions;
+          }
+
+          const removablePlugins = new Set([
+            'expo-audio',
+            'expo-camera',
+            'expo-media-library',
+          ]);
+          expo.plugins = (expo.plugins || []).filter((plugin) => {
+            const name = Array.isArray(plugin) ? plugin[0] : plugin;
+            return !removablePlugins.has(name);
+          });
+
+          expo.description = 'Plan study time, run focused sessions, review flashcards, and understand your learning progress in one offline-first student productivity app.';
+
+          fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
+          NODE
+
+      - name: Validate upgraded project
+        run: npx expo-doctor@latest
+
+      - name: Verify Android native generation
+        run: |
+          npx expo prebuild --clean --platform android --no-install
+          rm -rf android
+
+      - name: Bundle Android JavaScript
+        run: npx expo export --platform android --output-dir dist
+
+      - name: Commit validated upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A package.json package-lock.json app.json src android
+          if git diff --cached --quiet; then
+            echo "No SDK upgrade changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: upgrade Expo SDK 55 and trim unused permissions"
+          git push origin HEAD:launch-hardening-v1
