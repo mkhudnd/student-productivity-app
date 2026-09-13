@@ -3,16 +3,15 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { Platform } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
+import { useUser } from '../context/UserContext';
 import NavigationSessionTracker from '../components/NavigationSessionTracker';
 
-// Import Auth screens
 import LoginScreen from '../screens/Auth/LoginScreen';
 import RegisterScreen from '../screens/Auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
-// Import main screens
 import HomeScreen from '../screens/HomeScreen';
 import DeckListScreen from '../screens/Flashcards/DeckListScreen';
 import DeckEditorScreen from '../screens/Flashcards/DeckEditorScreen';
@@ -29,14 +28,14 @@ const Tab = createBottomTabNavigator();
 function MainTabs() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
-  
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: { 
-          backgroundColor: theme.colors.tabBackground, 
-          borderTopColor: theme.colors.tabBorder, 
+        tabBarStyle: {
+          backgroundColor: theme.colors.tabBackground,
+          borderTopColor: theme.colors.tabBorder,
           height: Platform.OS === 'ios' ? 84 + insets.bottom : 68 + insets.bottom,
           paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 8),
           paddingTop: 8,
@@ -44,7 +43,7 @@ function MainTabs() {
         tabBarActiveTintColor: theme.colors.tabActive,
         tabBarInactiveTintColor: theme.colors.tabInactive,
         tabBarLabelStyle: { fontFamily: 'Poppins_400Regular', fontSize: 12 },
-        tabBarIcon: ({ color, size }) => {
+        tabBarIcon: ({ color }) => {
           let iconName;
           if (route.name === 'Home') iconName = 'home-outline';
           else if (route.name === 'Planner') iconName = 'calendar-outline';
@@ -66,22 +65,48 @@ function MainTabs() {
   );
 }
 
-// AppNavigator sets up the navigation structure for authentication
+function LoadingScreen() {
+  const { theme } = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: theme.colors.background,
+      }}
+    >
+      <ActivityIndicator size="large" color={theme.colors.primary} />
+    </View>
+  );
+}
+
 export default function AppNavigator() {
+  const { currentUser, isLoading } = useUser();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
   return (
     <NavigationContainer>
-      <NavigationSessionTracker />
-      <AppStack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
-        {/* Auth screens */}
-        <AppStack.Screen name="Login" component={LoginScreen} />
-        <AppStack.Screen name="Register" component={RegisterScreen} />
-        <AppStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-        {/* Main app screens (tab navigator) */}
-        <AppStack.Screen name="MainTabs" component={MainTabs} />
-        <AppStack.Screen name="DeckEditor" component={DeckEditorScreen} />
-        <AppStack.Screen name="Study" component={StudyScreen} />
-        <AppStack.Screen name="Analytics" component={AnalyticsScreen} />
+      {currentUser ? <NavigationSessionTracker /> : null}
+      <AppStack.Navigator screenOptions={{ headerShown: false }}>
+        {currentUser ? (
+          <>
+            <AppStack.Screen name="MainTabs" component={MainTabs} />
+            <AppStack.Screen name="DeckEditor" component={DeckEditorScreen} />
+            <AppStack.Screen name="Study" component={StudyScreen} />
+            <AppStack.Screen name="Analytics" component={AnalyticsScreen} />
+          </>
+        ) : (
+          <>
+            <AppStack.Screen name="Login" component={LoginScreen} />
+            <AppStack.Screen name="Register" component={RegisterScreen} />
+            <AppStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          </>
+        )}
       </AppStack.Navigator>
     </NavigationContainer>
   );
-} 
+}
