@@ -11,58 +11,55 @@ class SessionTracker {
     this.backgroundStartTime = null;
     this.isTracking = false;
     this.appStateSubscription = null;
-    
-    // Bind methods
+    this.currentUser = null;
+
     this.handleAppStateChange = this.handleAppStateChange.bind(this);
   }
 
-  // Initialize session tracking
-  initialize() {
-    if (this.isTracking) return;
-    
-    this.isTracking = true;
-    this.startSession();
-    
-    // Listen for app state changes (modern React Native way)
-    this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
-    
-    console.log('SessionTracker initialized');
+  setCurrentUser(user) {
+    this.currentUser = user || null;
   }
 
-  // Cleanup session tracking
+  initialize() {
+    if (this.isTracking) return;
+
+    this.isTracking = true;
+    this.startSession();
+    this.appStateSubscription = AppState.addEventListener(
+      'change',
+      this.handleAppStateChange
+    );
+  }
+
   cleanup() {
     if (!this.isTracking) return;
-    
+
     this.isTracking = false;
     this.endSession();
-    
-    // Remove app state listener (modern React Native way)
+
     if (this.appStateSubscription) {
       this.appStateSubscription.remove();
       this.appStateSubscription = null;
     }
-    
-    console.log('SessionTracker cleaned up');
   }
 
-  // Start a new session
   startSession() {
     this.sessionStartTime = new Date();
     this.interactions = 0;
     this.backgroundTime = 0;
     this.backgroundStartTime = null;
-    
-    console.log('New app session started at', this.sessionStartTime.toISOString());
   }
 
-  // End current session and record it
   async endSession() {
-    if (!this.sessionStartTime) return;
-    
+    if (!this.sessionStartTime) return null;
+
     const endTime = new Date();
-    const totalDuration = Math.round((endTime - this.sessionStartTime) / 1000); // in seconds
-    const activeTime = totalDuration - this.backgroundTime;
-    
+    const totalDuration = Math.max(
+      0,
+      Math.round((endTime - this.sessionStartTime) / 1000)
+    );
+    const activeTime = Math.max(0, totalDuration - this.backgroundTime);
+
     const sessionData = {
       date: this.sessionStartTime.toISOString().slice(0, 10),
       startTime: this.sessionStartTime.toTimeString().slice(0, 8),
@@ -71,24 +68,25 @@ class SessionTracker {
       screen: this.currentScreen,
       interactions: this.interactions,
       backgroundTime: this.backgroundTime,
-      activeTime: Math.max(0, activeTime),
+      activeTime,
     };
 
     try {
-      await AnalyticsService.recordAppSession(sessionData);
-      console.log('App session recorded:', sessionData);
+      return await AnalyticsService.recordAppSession(
+        sessionData,
+        this.currentUser
+      );
     } catch (error) {
       console.error('Failed to record app session:', error);
+      return null;
+    } finally {
+      this.sessionStartTime = null;
+      this.interactions = 0;
+      this.backgroundTime = 0;
+      this.backgroundStartTime = null;
     }
-
-    // Reset session data
-    this.sessionStartTime = null;
-    this.interactions = 0;
-    this.backgroundTime = 0;
-    this.backgroundStartTime = null;
   }
 
-  // Handle app state changes (foreground/background)
   handleAppStateChange(nextAppState) {
     if (nextAppState === 'background' || nextAppState === 'inactive') {
       this.handleAppGoesToBackground();
@@ -97,69 +95,63 @@ class SessionTracker {
     }
   }
 
-  // App goes to background
   handleAppGoesToBackground() {
-    if (this.backgroundStartTime) return; // Already in background
-    
+    if (this.backgroundStartTime) return;
     this.backgroundStartTime = new Date();
-    console.log('App went to background at', this.backgroundStartTime.toISOString());
   }
 
-  // App comes to foreground
   handleAppComesToForeground() {
-    if (!this.backgroundStartTime) return; // Wasn't in background
-    
+    if (!this.backgroundStartTime) return;
+
     const foregroundTime = new Date();
-    const backgroundDuration = Math.round((foregroundTime - this.backgroundStartTime) / 1000);
+    const backgroundDuration = Math.max(
+      0,
+      Math.round((foregroundTime - this.backgroundStartTime) / 1000)
+    );
     this.backgroundTime += backgroundDuration;
     this.backgroundStartTime = null;
-    
-    console.log('App came to foreground, background time:', backgroundDuration, 'seconds');
   }
 
-  // Track screen navigation
   trackScreenView(screenName) {
-    this.currentScreen = screenName;
-    console.log('Screen changed to:', screenName);
+    this.currentScreen = screenName || 'Unknown';
   }
 
-  // Track user interaction
-  trackInteraction(interactionType = 'tap') {
-    this.interactions++;
-    console.log('Interaction tracked:', interactionType, '- Total:', this.interactions);
+  trackInteraction() {
+    this.interactions += 1;
   }
 
-  // Get current session stats
   getCurrentSessionStats() {
     if (!this.sessionStartTime) return null;
-    
+
     const now = new Date();
-    const totalDuration = Math.round((now - this.sessionStartTime) / 1000);
-    const activeTime = totalDuration - this.backgroundTime;
-    
+    const totalDuration = Math.max(
+      0,
+      Math.round((now - this.sessionStartTime) / 1000)
+    );
+    const currentBackground = this.backgroundStartTime
+      ? Math.max(0, Math.round((now - this.backgroundStartTime) / 1000))
+      : 0;
+    const backgroundTime = this.backgroundTime + currentBackground;
+
     return {
       startTime: this.sessionStartTime,
       duration: totalDuration,
-      activeTime: Math.max(0, activeTime),
-      backgroundTime: this.backgroundTime,
+      activeTime: Math.max(0, totalDuration - backgroundTime),
+      backgroundTime,
       interactions: this.interactions,
       currentScreen: this.currentScreen,
     };
   }
 
-  // Force end session and start new one (useful for debugging or manual resets)
   async resetSession() {
     await this.endSession();
     this.startSession();
   }
 }
 
-// Create singleton instance
 const sessionTracker = new SessionTracker();
-
 export default sessionTracker;
 
-// Focus Session Tracker for detailed study sessions
 export class FocusSessionTracker {
   constructor() {
     this.currentFocusSession = null;
@@ -168,19 +160,23 @@ export class FocusSessionTracker {
     this.breaks = [];
     this.targetDuration = null;
     this.isActive = false;
+    this.currentUser = null;
   }
 
-  // Start a focus session
+  setCurrentUser(user) {
+    this.currentUser = user || null;
+  }
+
   startFocusSession({
     subject,
     topic,
-    targetDuration, // in seconds
-    sessionType = 'deep_work', // 'pomodoro', 'deep_work', 'review', 'practice'
+    targetDuration,
+    sessionType = 'deep_work',
     environment = 'quiet',
-    mood = 'good'
+    mood = 'good',
   }) {
     this.currentFocusSession = {
-      id: Date.now().toString(),
+      id: `focus_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
       subject,
       topic,
       sessionType,
@@ -189,34 +185,32 @@ export class FocusSessionTracker {
       goals: [],
       goalsCompleted: [],
     };
-    
+
     this.sessionStartTime = new Date();
     this.targetDuration = targetDuration;
     this.interruptions = [];
     this.breaks = [];
     this.isActive = true;
-    
-    console.log('Focus session started:', this.currentFocusSession);
+
     return this.currentFocusSession.id;
   }
 
-  // End focus session
   async endFocusSession({
     completed = false,
-    focusScore = null, // 1-10
-    productivity = null, // 1-10
-    difficulty = null, // 1-10
+    focusScore = null,
+    productivity = null,
+    difficulty = null,
     notes = '',
-    goalsCompleted = []
+    goalsCompleted = [],
   }) {
-    if (!this.currentFocusSession || !this.sessionStartTime) {
-      console.log('No active focus session to end');
-      return null;
-    }
+    if (!this.currentFocusSession || !this.sessionStartTime) return null;
 
     const endTime = new Date();
-    const actualDuration = Math.round((endTime - this.sessionStartTime) / 1000);
-    
+    const actualDuration = Math.max(
+      0,
+      Math.round((endTime - this.sessionStartTime) / 1000)
+    );
+
     const sessionData = {
       date: this.sessionStartTime.toISOString().slice(0, 10),
       startTime: this.sessionStartTime.toTimeString().slice(0, 8),
@@ -237,121 +231,131 @@ export class FocusSessionTracker {
       difficulty,
       notes,
       goals: this.currentFocusSession.goals,
-      goalsCompleted,
+      goalsCompleted:
+        goalsCompleted.length > 0
+          ? goalsCompleted
+          : this.currentFocusSession.goalsCompleted,
     };
 
     try {
-      const result = await AnalyticsService.recordFocusSession(sessionData);
-      console.log('Focus session recorded:', result);
-      
-      // Reset session
-      this.currentFocusSession = null;
-      this.sessionStartTime = null;
-      this.isActive = false;
-      
-      return result;
+      return await AnalyticsService.recordFocusSession(
+        sessionData,
+        this.currentUser
+      );
     } catch (error) {
       console.error('Failed to record focus session:', error);
       return null;
+    } finally {
+      this.currentFocusSession = null;
+      this.sessionStartTime = null;
+      this.targetDuration = null;
+      this.interruptions = [];
+      this.breaks = [];
+      this.isActive = false;
     }
   }
 
-  // Record an interruption
   async recordInterruption({
-    reason, // 'notification', 'call', 'distraction', 'break', 'emergency'
-    source = 'external', // 'internal', 'external'
-    duration = 0, // in seconds
-    resumedSession = true
+    reason,
+    source = 'external',
+    duration = 0,
+    resumedSession = true,
   }) {
-    if (!this.currentFocusSession) return;
+    if (!this.currentFocusSession) return null;
 
     const interruption = {
       timestamp: new Date().toISOString(),
       reason,
       source,
       duration,
-      resumedSession
+      resumedSession,
     };
-    
+
     this.interruptions.push(interruption);
-    
-    // Also record in analytics
+
     try {
-      await AnalyticsService.recordInterruption({
-        sessionId: this.currentFocusSession.id,
-        sessionType: 'focus_session',
-        ...interruption
-      });
+      await AnalyticsService.recordInterruption(
+        {
+          sessionId: this.currentFocusSession.id,
+          sessionType: 'focus_session',
+          ...interruption,
+        },
+        this.currentUser
+      );
     } catch (error) {
       console.error('Failed to record interruption:', error);
     }
-    
-    console.log('Interruption recorded:', interruption);
+
+    return interruption;
   }
 
-  // Record a break
   async recordBreak({
-    breakType = 'short', // 'short', 'long', 'meal', 'exercise'
+    breakType = 'short',
     activity = '',
-    duration = 0, // in seconds
-    restfulness = null // 1-10
+    duration = 0,
+    restfulness = null,
   }) {
-    if (!this.currentFocusSession) return;
+    if (!this.currentFocusSession) return null;
 
     const breakSession = {
       timestamp: new Date().toISOString(),
       breakType,
       activity,
       duration,
-      restfulness
+      restfulness,
     };
-    
+
     this.breaks.push(breakSession);
-    
-    // Also record in analytics
+
     try {
-      await AnalyticsService.recordBreakSession({
-        date: new Date().toISOString().slice(0, 10),
-        startTime: new Date(Date.now() - duration * 1000).toTimeString().slice(0, 8),
-        endTime: new Date().toTimeString().slice(0, 8),
-        duration,
-        breakType,
-        activity,
-        restfulness,
-        linkedFocusSessionId: this.currentFocusSession.id
-      });
+      await AnalyticsService.recordBreakSession(
+        {
+          date: new Date().toISOString().slice(0, 10),
+          startTime: new Date(Date.now() - duration * 1000)
+            .toTimeString()
+            .slice(0, 8),
+          endTime: new Date().toTimeString().slice(0, 8),
+          duration,
+          breakType,
+          activity,
+          restfulness,
+          linkedFocusSessionId: this.currentFocusSession.id,
+        },
+        this.currentUser
+      );
     } catch (error) {
       console.error('Failed to record break session:', error);
     }
-    
-    console.log('Break recorded:', breakSession);
+
+    return breakSession;
   }
 
-  // Add a goal to current session
   addGoal(goal) {
     if (!this.currentFocusSession) return;
     this.currentFocusSession.goals.push(goal);
   }
 
-  // Mark a goal as completed
   completeGoal(goalIndex) {
-    if (!this.currentFocusSession || !this.currentFocusSession.goals[goalIndex]) return;
-    
+    if (!this.currentFocusSession?.goals?.[goalIndex]) return;
+
     const goal = this.currentFocusSession.goals[goalIndex];
     this.currentFocusSession.goalsCompleted.push({
       goal,
-      completedAt: new Date().toISOString()
+      completedAt: new Date().toISOString(),
     });
   }
 
-  // Get current session status
   getCurrentSessionStatus() {
     if (!this.currentFocusSession || !this.sessionStartTime) return null;
-    
-    const now = new Date();
-    const elapsed = Math.round((now - this.sessionStartTime) / 1000);
-    const remaining = this.targetDuration ? Math.max(0, this.targetDuration - elapsed) : null;
-    
+
+    const elapsed = Math.max(
+      0,
+      Math.round((new Date() - this.sessionStartTime) / 1000)
+    );
+    const remaining = this.targetDuration
+      ? Math.max(0, this.targetDuration - elapsed)
+      : null;
+
     return {
       sessionId: this.currentFocusSession.id,
       subject: this.currentFocusSession.subject,
@@ -369,5 +373,4 @@ export class FocusSessionTracker {
   }
 }
 
-// Export focus session tracker instance
-export const focusSessionTracker = new FocusSessionTracker(); 
+export const focusSessionTracker = new FocusSessionTracker();
