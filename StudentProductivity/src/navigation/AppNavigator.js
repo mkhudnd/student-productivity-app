@@ -74,9 +74,9 @@ function MainTabs() {
 
 /**
  * Keeps the root navigation state aligned with authentication state.
- * This fixes two launch-blocking cases:
- * 1. a persisted user was still sent to Login after an app restart;
- * 2. logging out could leave the user inside MainTabs.
+ * A signed-in user cannot remain on an auth screen, while a signed-out user
+ * cannot remain on protected app screens. Register/ForgotPassword remain
+ * reachable while signed out.
  */
 function AuthNavigationSynchronizer({ currentUser, isLoading }) {
   useEffect(() => {
@@ -84,15 +84,13 @@ function AuthNavigationSynchronizer({ currentUser, isLoading }) {
 
     const state = navigationRef.getRootState();
     const activeRoute = state?.routes?.[state.index ?? 0]?.name;
-    const targetRoute = currentUser ? 'MainTabs' : 'Login';
-
     const isAuthRoute = ['Login', 'Register', 'ForgotPassword'].includes(activeRoute);
-    const needsReset = currentUser ? isAuthRoute : activeRoute !== 'Login';
+    const needsReset = currentUser ? isAuthRoute : !isAuthRoute;
 
     if (needsReset) {
       navigationRef.reset({
         index: 0,
-        routes: [{ name: targetRoute }],
+        routes: [{ name: currentUser ? 'MainTabs' : 'Login' }],
       });
     }
   }, [currentUser, isLoading]);
