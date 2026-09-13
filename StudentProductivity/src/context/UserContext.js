@@ -5,6 +5,12 @@ import { DataMigrationService } from '../utils/dataMigration';
 
 const UserContext = createContext();
 
+const sanitizeSessionUser = (user) => {
+  if (!user || typeof user !== 'object') return null;
+  const { password, securityAnswer, ...safeUser } = user;
+  return safeUser;
+};
+
 export const useUser = () => {
   const context = useContext(UserContext);
   if (!context) {
@@ -17,19 +23,32 @@ export const UserProvider = ({ children }) => {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load current user from AsyncStorage on app start
   useEffect(() => {
     loadCurrentUser();
   }, []);
+
+  const persistSessionUser = async (user) => {
+    const safeUser = sanitizeSessionUser(user);
+    if (!safeUser) {
+      await AsyncStorage.removeItem('currentUser');
+      return null;
+    }
+    await AsyncStorage.setItem('currentUser', JSON.stringify(safeUser));
+    return safeUser;
+  };
 
   const loadCurrentUser = async () => {
     try {
       const userData = await AsyncStorage.getItem('currentUser');
       if (userData) {
-        setCurrentUser(JSON.parse(userData));
+        const safeUser = sanitizeSessionUser(JSON.parse(userData));
+        setCurrentUser(safeUser);
+        await persistSessionUser(safeUser);
       }
     } catch (error) {
       console.error('Error loading current user:', error);
+      await AsyncStorage.removeItem('currentUser');
+      setCurrentUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -37,13 +56,17 @@ export const UserProvider = ({ children }) => {
 
   const loginUser = async (user) => {
     try {
-      setCurrentUser(user);
-      await AsyncStorage.setItem('currentUser', JSON.stringify(user));
-      
-      // Trigger data migration to ensure proper user isolation
-      await DataMigrationService.migrateDataForUser(user);
+      const safeUser = await persistSessionUser(user);
+      setCurrentUser(safeUser);
+
+      if (safeUser) {
+        await DataMigrationService.migrateDataForUser(safeUser);
+      }
+
+      return { success: true };
     } catch (error) {
       console.error('Error saving current user:', error);
+      return { success: false, error: error.message };
     }
   };
 
@@ -51,35 +74,31 @@ export const UserProvider = ({ children }) => {
     try {
       setCurrentUser(null);
       await AsyncStorage.removeItem('currentUser');
-      
-      // Note: We don't clear user-specific data here as users may want to keep their data
-      // Data is automatically isolated by user email in the updated components
     } catch (error) {
       console.error('Error removing current user:', error);
-      // Even if there's an error, ensure the user state is cleared
       setCurrentUser(null);
     }
   };
 
   const updateUser = async (updatedUserData) => {
     try {
-      // Update user in users.json file
+      if (!currentUser?.email) {
+        return { success: false, error: 'No active user' };
+      }
+
       const users = (await readJson('users.json')) || [];
       const userIndex = users.findIndex(u => u.email === currentUser.email);
-      
-      if (userIndex !== -1) {
-        users[userIndex] = { ...users[userIndex], ...updatedUserData };
-        await writeJson('users.json', users);
-        
-        // Update current user in context and AsyncStorage
-        const updatedUser = users[userIndex];
-        setCurrentUser(updatedUser);
-        await AsyncStorage.setItem('currentUser', JSON.stringify(updatedUser));
-        
-        return { success: true };
-      } else {
+
+      if (userIndex === -1) {
         return { success: false, error: 'User not found' };
       }
+
+      users[userIndex] = { ...users[userIndex], ...updatedUserData };
+      await writeJson('users.json', users);
+
+      const safeUser = await persistSessionUser(users[userIndex]);
+      setCurrentUser(safeUser);
+      return { success: true };
     } catch (error) {
       console.error('Error updating user:', error);
       return { success: false, error: error.message };
@@ -121,4 +140,4 @@ export const UserProvider = ({ children }) => {
       {children}
     </UserContext.Provider>
   );
-}; 
+};
