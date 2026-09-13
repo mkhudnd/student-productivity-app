@@ -1,20 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import sessionTracker, { focusSessionTracker } from '../utils/SessionTracker';
+import { AnalyticsService } from '../utils/analyticsService';
+import { useUser } from '../context/UserContext';
 
 // Hook for basic session tracking (no navigation dependency)
 export function useBasicSessionTracking() {
-  useEffect(() => {
-    // Initialize session tracking when app starts
-    sessionTracker.initialize();
+  const { currentUser } = useUser();
 
+  useEffect(() => {
+    sessionTracker.initialize();
     return () => {
-      // Cleanup when app closes
       sessionTracker.cleanup();
     };
   }, []);
 
-  // Return session tracking functions
+  // Keep all analytics/session services aligned with the signed-in user.
+  useEffect(() => {
+    sessionTracker.setCurrentUser(currentUser);
+    focusSessionTracker.setCurrentUser(currentUser);
+    AnalyticsService.setCurrentUser(currentUser);
+  }, [currentUser]);
+
   return {
     trackInteraction: sessionTracker.trackInteraction.bind(sessionTracker),
     getCurrentStats: sessionTracker.getCurrentSessionStats.bind(sessionTracker),
@@ -25,37 +32,37 @@ export function useBasicSessionTracking() {
 // Hook for automatic app session tracking (with navigation)
 export function useSessionTracking() {
   const navigation = useNavigation();
+  const { currentUser } = useUser();
   const currentRoute = useRef(null);
 
   useEffect(() => {
-    // Initialize session tracking when app starts
     sessionTracker.initialize();
-
     return () => {
-      // Cleanup when app closes
       sessionTracker.cleanup();
     };
   }, []);
 
-  // Track screen changes
   useEffect(() => {
-    const unsubscribe = navigation.addListener('state', (e) => {
-      const routes = e.data.state?.routes;
-      if (routes && routes.length > 0) {
-        const activeRoute = routes[routes.length - 1];
-        const screenName = activeRoute.name;
-        
-        if (currentRoute.current !== screenName) {
-          currentRoute.current = screenName;
-          sessionTracker.trackScreenView(screenName);
-        }
+    sessionTracker.setCurrentUser(currentUser);
+    AnalyticsService.setCurrentUser(currentUser);
+  }, [currentUser]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('state', (event) => {
+      const routes = event.data.state?.routes;
+      if (!routes?.length) return;
+
+      const activeRoute = routes[routes.length - 1];
+      const screenName = activeRoute.name;
+      if (currentRoute.current !== screenName) {
+        currentRoute.current = screenName;
+        sessionTracker.trackScreenView(screenName);
       }
     });
 
     return unsubscribe;
   }, [navigation]);
 
-  // Return session tracking functions
   return {
     trackInteraction: sessionTracker.trackInteraction.bind(sessionTracker),
     getCurrentStats: sessionTracker.getCurrentSessionStats.bind(sessionTracker),
@@ -65,10 +72,14 @@ export function useSessionTracking() {
 
 // Hook for focus session tracking
 export function useFocusSession() {
+  const { currentUser } = useUser();
   const [currentSession, setCurrentSession] = useState(null);
   const [sessionStats, setSessionStats] = useState(null);
 
-  // Update session stats periodically
+  useEffect(() => {
+    focusSessionTracker.setCurrentUser(currentUser);
+  }, [currentUser]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const stats = focusSessionTracker.getCurrentSessionStatus();
@@ -94,24 +105,19 @@ export function useFocusSession() {
     return result;
   };
 
-  const recordInterruption = (interruptionData) => {
-    return focusSessionTracker.recordInterruption(interruptionData);
-  };
+  const recordInterruption = (interruptionData) =>
+    focusSessionTracker.recordInterruption(interruptionData);
 
-  const recordBreak = (breakData) => {
-    return focusSessionTracker.recordBreak(breakData);
-  };
+  const recordBreak = (breakData) => focusSessionTracker.recordBreak(breakData);
 
   const addGoal = (goal) => {
     focusSessionTracker.addGoal(goal);
-    const stats = focusSessionTracker.getCurrentSessionStatus();
-    setSessionStats(stats);
+    setSessionStats(focusSessionTracker.getCurrentSessionStatus());
   };
 
   const completeGoal = (goalIndex) => {
     focusSessionTracker.completeGoal(goalIndex);
-    const stats = focusSessionTracker.getCurrentSessionStatus();
-    setSessionStats(stats);
+    setSessionStats(focusSessionTracker.getCurrentSessionStatus());
   };
 
   return {
@@ -123,7 +129,7 @@ export function useFocusSession() {
     recordBreak,
     addGoal,
     completeGoal,
-    isActive: !!currentSession,
+    isActive: Boolean(currentSession),
   };
 }
 
@@ -134,23 +140,25 @@ export function useScreenTracking(screenName) {
 
   useFocusEffect(
     React.useCallback(() => {
-      // Screen is focused
       screenStartTime.current = new Date();
       interactionCount.current = 0;
       sessionTracker.trackScreenView(screenName);
 
       return () => {
-        // Screen is unfocused - record screen time
         if (screenStartTime.current) {
-          const duration = Math.round((new Date() - screenStartTime.current) / 1000);
-          console.log(`Screen ${screenName} viewed for ${duration} seconds with ${interactionCount.current} interactions`);
+          const duration = Math.round(
+            (new Date() - screenStartTime.current) / 1000
+          );
+          console.log(
+            `Screen ${screenName} viewed for ${duration} seconds with ${interactionCount.current} interactions`
+          );
         }
       };
     }, [screenName])
   );
 
   const trackInteraction = (interactionType = 'tap') => {
-    interactionCount.current++;
+    interactionCount.current += 1;
     sessionTracker.trackInteraction(interactionType);
   };
 
@@ -165,7 +173,11 @@ export function useScreenTracking(screenName) {
 }
 
 // Hook for analytics summary
-export function useAnalyticsSummary(dateRange = 30, refreshInterval = 60000, currentUser = null) {
+export function useAnalyticsSummary(
+  dateRange = 30,
+  refreshInterval = 60000,
+  currentUser = null
+) {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -176,11 +188,12 @@ export function useAnalyticsSummary(dateRange = 30, refreshInterval = 60000, cur
       setError(null);
       if (!currentUser) {
         setAnalytics(null);
-        setLoading(false);
         return;
       }
-      const { AnalyticsService } = await import('../utils/analyticsService');
-      const data = await AnalyticsService.getAnalyticsSummary(dateRange, currentUser);
+      const data = await AnalyticsService.getAnalyticsSummary(
+        dateRange,
+        currentUser
+      );
       setAnalytics(data);
     } catch (err) {
       setError(err.message);
@@ -192,12 +205,9 @@ export function useAnalyticsSummary(dateRange = 30, refreshInterval = 60000, cur
 
   useEffect(() => {
     loadAnalytics();
-    
-    // Refresh analytics periodically
     const interval = setInterval(loadAnalytics, refreshInterval);
-    
     return () => clearInterval(interval);
-  }, [dateRange, refreshInterval]);
+  }, [dateRange, refreshInterval, currentUser]);
 
   return {
     analytics,
@@ -218,11 +228,12 @@ export function useSessionInsights(dateRange = 7, currentUser = null) {
         setLoading(true);
         if (!currentUser) {
           setInsights(null);
-          setLoading(false);
           return;
         }
-        const { AnalyticsService } = await import('../utils/analyticsService');
-        const data = await AnalyticsService.getSessionInsights(dateRange, currentUser);
+        const data = await AnalyticsService.getSessionInsights(
+          dateRange,
+          currentUser
+        );
         setInsights(data);
       } catch (error) {
         console.error('Error loading session insights:', error);
@@ -242,4 +253,4 @@ export function useSessionInsights(dateRange = 7, currentUser = null) {
     focusTrends: insights?.focusTrends,
     recommendations: insights?.recommendations || [],
   };
-} 
+}

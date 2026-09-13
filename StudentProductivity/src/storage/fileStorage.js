@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // Base directory for app data
 const DATA_DIR = FileSystem.documentDirectory + 'data/';

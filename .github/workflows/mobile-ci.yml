@@ -1,0 +1,37 @@
+name: Mobile CI
+
+on:
+  push:
+    branches:
+      - main
+      - launch-hardening-v1
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: StudentProductivity
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: StudentProductivity/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Expo configuration
+        run: npx expo config --type public > /dev/null
+
+      - name: Bundle Android JavaScript
+        run: npx expo export --platform android --output-dir dist

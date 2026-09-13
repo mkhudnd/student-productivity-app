@@ -8,17 +8,6 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "description": "A comprehensive productivity app for students to manage their studies, track progress, create flashcards, take notes, and stay organized.",
-    "keywords": [
-      "student",
-      "productivity",
-      "study",
-      "education",
-      "planner",
-      "notes",
-      "flashcards",
-      "tracker"
-    ],
-    "privacy": "public",
     "platforms": [
       "ios",
       "android"
@@ -48,7 +37,7 @@
       },
       "package": "com.studentproductivity.app",
       "versionCode": 2,
-      "edgeToEdgeEnabled": false,
+      "edgeToEdgeEnabled": true,
       "permissions": [
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
@@ -76,7 +65,9 @@
           "photosPermission": "Allow Student Productivity to access your photos to save and retrieve images.",
           "savePhotosPermission": "Allow Student Productivity to save photos to your library."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-asset"
     ],
     "extra": {
       "eas": {
