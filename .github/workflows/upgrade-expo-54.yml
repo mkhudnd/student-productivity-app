@@ -37,7 +37,7 @@ jobs:
       - name: Upgrade Expo SDK and compatible packages
         run: |
           npx expo install expo@^54.0.0 --fix
-          npx expo install expo-asset expo-constants expo-system-ui react-native-worklets
+          npx expo install expo-asset expo-constants expo-system-ui react-native-worklets babel-preset-expo
 
       - name: Apply SDK 54 compatibility edits
         run: |
