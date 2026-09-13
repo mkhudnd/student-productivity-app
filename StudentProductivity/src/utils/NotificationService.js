@@ -92,11 +92,12 @@ export class NotificationService {
         throw new Error(`Invalid activity reminder time: ${activity.time}`);
       }
 
+      const repeat = activity.repeat || 'none';
       const now = new Date();
       const notificationTime = new Date();
       notificationTime.setHours(hours, minutes, 0, 0);
 
-      if (notificationTime <= now && activity.repeat === 'none') {
+      if (notificationTime <= now && repeat === 'none') {
         notificationTime.setDate(notificationTime.getDate() + 1);
       }
 
@@ -118,9 +119,9 @@ export class NotificationService {
       };
 
       let trigger;
-      if (activity.repeat === 'daily') {
+      if (repeat === 'daily') {
         trigger = { hour: hours, minute: minutes, repeats: true };
-      } else if (activity.repeat === 'weekly') {
+      } else if (repeat === 'weekly') {
         trigger = {
           weekday: notificationTime.getDay() + 1,
           hour: hours,
@@ -246,7 +247,7 @@ export class NotificationService {
       return Notifications.addNotificationResponseReceivedListener(handler);
     } catch (error) {
       console.error('Failed to attach notification response listener:', error);
-      return { remove: () => {} };
+      return null;
     }
   }
 
@@ -255,7 +256,7 @@ export class NotificationService {
       return Notifications.addNotificationReceivedListener(handler);
     } catch (error) {
       console.error('Failed to attach notification listener:', error);
-      return { remove: () => {} };
+      return null;
     }
   }
 }
