@@ -1,0 +1,89 @@
+name: Upgrade Expo SDK 54
+
+on:
+  push:
+    branches:
+      - launch-hardening-v1
+    paths:
+      - .github/workflows/upgrade-expo-54.yml
+
+permissions:
+  contents: write
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: StudentProductivity
+
+    steps:
+      - name: Checkout launch branch
+        uses: actions/checkout@v4
+        with:
+          ref: launch-hardening-v1
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.4
+          cache: npm
+          cache-dependency-path: StudentProductivity/package-lock.json
+
+      - name: Install current dependencies
+        run: npm ci
+
+      - name: Upgrade Expo SDK and compatible packages
+        run: npx expo install expo@^54.0.0 --fix
+
+      - name: Apply SDK 54 compatibility edits
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const files = [
+            'src/storage/fileStorage.js',
+            'src/screens/Flashcards/DeckEditorScreen.js',
+            'src/utils/csvExport.js',
+          ];
+
+          for (const file of files) {
+            if (!fs.existsSync(file)) continue;
+            const source = fs.readFileSync(file, 'utf8');
+            const updated = source.replace(
+              /from ['\"]expo-file-system['\"]/g,
+              "from 'expo-file-system/legacy'"
+            );
+            fs.writeFileSync(file, updated);
+          }
+
+          const appPath = 'app.json';
+          const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          if (app.expo?.android) {
+            app.expo.android.edgeToEdgeEnabled = true;
+          }
+          fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
+          NODE
+
+      - name: Regenerate Android native project
+        run: npx expo prebuild --clean --platform android --no-install
+
+      - name: Validate upgraded project
+        run: npx expo-doctor@latest
+
+      - name: Bundle Android JavaScript
+        run: npx expo export --platform android --output-dir dist
+
+      - name: Commit validated upgrade
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json app.json src android
+          if git diff --cached --quiet; then
+            echo "No SDK upgrade changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: upgrade Expo SDK 54"
+          git push origin HEAD:launch-hardening-v1
