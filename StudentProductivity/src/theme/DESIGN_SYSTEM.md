@@ -31,13 +31,21 @@ Use `src/components/ui.js` for common interface elements:
 
 Use `ScreenLayout` for screen-safe-area, scrolling and common header behavior. Auth screens should use `AuthScaffold` and `AuthField`.
 
+## Icon system
+
+Lucide React Native is the V2 icon source. Product screens must not import `lucide-react-native` or `@expo/vector-icons` directly.
+
+- Use `AppIcon` for informational icons and `IconButton` when the icon itself is the action.
+- `src/components/AppIcon.js` owns the semantic mapping between product icon names and Lucide components.
+- Legacy Ionicons-style semantic keys are translated inside `AppIcon` during the V2 migration, keeping screen code independent of the underlying icon package.
+- Keep the default line-icon treatment consistent. Change stroke weight only when a specific state genuinely needs stronger emphasis.
+- If the icon library changes again, update the registry rather than rewriting screens.
+
 ## Icon rule
 
 Icons are glyphs, not badges.
 
 - Do not put ordinary icons inside colored circles, squares, pills or tinted wrapper views.
-- Use `AppIcon` directly when an icon is informational.
-- Use `IconButton` when the icon is the action.
 - Color may communicate state or emphasis, but the icon should normally sit directly on the surrounding surface.
 - A container is acceptable only when the container itself is the control or data component, not merely decoration around an icon.
 
