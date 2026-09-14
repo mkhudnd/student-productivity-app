@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { readJson } from '../../storage/fileStorage';
 import { useUser } from '../../context/UserContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -10,7 +9,8 @@ import {
   AuthScaffold,
   PrimaryButton,
 } from '../../components/AuthScaffold';
-import { radius, spacing, typography } from '../../theme/designSystem';
+import { AppIcon, IconButton } from '../../components/ui';
+import { spacing, typography } from '../../theme/designSystem';
 
 export default function LoginScreen({ navigation }) {
   const { theme } = useTheme();
@@ -109,25 +109,19 @@ export default function LoginScreen({ navigation }) {
         onSubmitEditing={handleLogin}
         editable={!isLoading}
         right={(
-          <TouchableOpacity
-            style={styles.iconButton}
+          <IconButton
+            icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+            size={20}
             onPress={() => setShowPassword((value) => !value)}
-            accessibilityRole="button"
             accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-          >
-            <Ionicons
-              name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-              size={20}
-              color={theme.colors.textSecondary}
-            />
-          </TouchableOpacity>
+          />
         )}
       />
 
       <View style={styles.metaRow}>
-        <View style={styles.localBadge}>
-          <Ionicons name="phone-portrait-outline" size={15} color={theme.colors.accent} />
-          <Text style={styles.localBadgeText}>Local account</Text>
+        <View style={styles.localRow}>
+          <AppIcon name="phone-portrait-outline" size={15} color={theme.colors.accent} />
+          <Text style={styles.localText}>Local account</Text>
         </View>
         <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="button">
           <Text style={styles.forgotText}>Forgot password?</Text>
@@ -147,9 +141,7 @@ export default function LoginScreen({ navigation }) {
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  sectionHeading: {
-    marginBottom: spacing.xl,
-  },
+  sectionHeading: { marginBottom: spacing.xl },
   sectionTitle: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.title,
@@ -163,12 +155,6 @@ const getStyles = (theme) => StyleSheet.create({
     color: theme.colors.textSecondary,
     marginTop: spacing.xxs,
   },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -177,16 +163,12 @@ const getStyles = (theme) => StyleSheet.create({
     marginBottom: spacing.lg,
     gap: spacing.sm,
   },
-  localBadge: {
+  localRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    backgroundColor: theme.colors.accentSoft,
-    borderRadius: radius.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
   },
-  localBadgeText: {
+  localText: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.caption,
     color: theme.colors.accent,
