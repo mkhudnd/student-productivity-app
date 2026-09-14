@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { readJson, writeJson } from '../../storage/fileStorage';
 import { useTheme } from '../../context/ThemeContext';
 import {
@@ -10,7 +9,8 @@ import {
   PasswordRequirements,
   PrimaryButton,
 } from '../../components/AuthScaffold';
-import { radius, spacing, typography } from '../../theme/designSystem';
+import { AppIcon, Card, IconButton, ProgressBar } from '../../components/ui';
+import { spacing, typography } from '../../theme/designSystem';
 
 const PASSWORD_REQUIREMENTS = [
   { label: '8+ characters', test: (value) => value.length >= 8 },
@@ -21,21 +21,9 @@ const PASSWORD_REQUIREMENTS = [
 ];
 
 const STEP_META = {
-  1: {
-    icon: 'mail-outline',
-    title: 'Find your account',
-    subtitle: 'Enter the email address attached to this local account.',
-  },
-  2: {
-    icon: 'shield-checkmark-outline',
-    title: 'Verify recovery answer',
-    subtitle: 'Answer the recovery question you chose when the account was created.',
-  },
-  3: {
-    icon: 'key-outline',
-    title: 'Choose a new password',
-    subtitle: 'Create a fresh password that meets all requirements.',
-  },
+  1: { icon: 'mail-outline', title: 'Find your account', subtitle: 'Enter the email address attached to this local account.' },
+  2: { icon: 'shield-checkmark-outline', title: 'Verify recovery answer', subtitle: 'Answer the recovery question you chose when the account was created.' },
+  3: { icon: 'key-outline', title: 'Choose a new password', subtitle: 'Create a fresh password that meets all requirements.' },
 };
 
 export default function ForgotPasswordScreen({ navigation }) {
@@ -52,34 +40,27 @@ export default function ForgotPasswordScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
 
   const stepMeta = STEP_META[step];
-  const progress = useMemo(() => `${Math.round((step / 3) * 100)}%`, [step]);
+  const progress = useMemo(() => step / 3, [step]);
 
   const verifyEmail = async () => {
     const normalizedEmail = email.trim().toLowerCase();
     setError('');
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setError('Enter a valid email address.');
       return;
     }
-
     setLoading(true);
     try {
       const users = (await readJson('users.json')) || [];
-      const user = users.find(
-        (candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail,
-      );
-
+      const user = users.find((candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail);
       if (!user) {
         setError('No local account uses this email address.');
         return;
       }
-
       if (!user.securityQuestion || !user.securityAnswer) {
         setError('This account does not have recovery information set up.');
         return;
       }
-
       setFoundUser(user);
       setEmail(normalizedEmail);
       setStep(2);
@@ -97,53 +78,38 @@ export default function ForgotPasswordScreen({ navigation }) {
       setError('Enter your recovery answer.');
       return;
     }
-
     const expected = String(foundUser?.securityAnswer || '').trim().toLowerCase();
     const provided = securityAnswer.trim().toLowerCase();
-
     if (expected !== provided) {
       setError('That answer does not match this account.');
       return;
     }
-
     setStep(3);
   };
 
   const resetPassword = async () => {
     setError('');
-
     if (!newPassword || !confirmPassword) {
       setError('Enter and confirm your new password.');
       return;
     }
-
     if (newPassword !== confirmPassword) {
       setError('The two passwords do not match.');
       return;
     }
-
     if (PASSWORD_REQUIREMENTS.some((requirement) => !requirement.test(newPassword))) {
       setError('Your password still misses one or more requirements.');
       return;
     }
-
     setLoading(true);
     try {
       const users = (await readJson('users.json')) || [];
-      const userIndex = users.findIndex(
-        (candidate) => String(candidate.email || '').trim().toLowerCase() === email,
-      );
-
+      const userIndex = users.findIndex((candidate) => String(candidate.email || '').trim().toLowerCase() === email);
       if (userIndex === -1) {
         setError('The account could not be found anymore. Start again.');
         return;
       }
-
-      users[userIndex] = {
-        ...users[userIndex],
-        password: newPassword,
-        lastPasswordReset: new Date().toISOString(),
-      };
+      users[userIndex] = { ...users[userIndex], password: newPassword, lastPasswordReset: new Date().toISOString() };
       await writeJson('users.json', users);
       navigation.replace('Login');
     } catch (resetError) {
@@ -152,15 +118,6 @@ export default function ForgotPasswordScreen({ navigation }) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const goBackStep = () => {
-    setError('');
-    if (step === 1) {
-      navigation.goBack();
-      return;
-    }
-    setStep((value) => Math.max(1, value - 1));
   };
 
   return (
@@ -177,52 +134,27 @@ export default function ForgotPasswordScreen({ navigation }) {
       )}
     >
       <View style={styles.progressHeader}>
-        <View>
+        <View style={styles.progressCopy}>
           <Text style={styles.stepCount}>Step {step} of 3</Text>
           <Text style={styles.stepTitle}>{stepMeta.title}</Text>
         </View>
-        <View style={styles.stepIcon}>
-          <Ionicons name={stepMeta.icon} size={20} color={theme.colors.primary} />
-        </View>
+        <AppIcon name={stepMeta.icon} size={22} color={theme.colors.primary} />
       </View>
 
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: progress }]} />
-      </View>
+      <ProgressBar progress={progress} style={styles.progressBar} />
       <Text style={styles.stepSubtitle}>{stepMeta.subtitle}</Text>
 
       {step === 1 ? (
-        <AuthField
-          label="Email address"
-          icon="mail-outline"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@example.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={verifyEmail}
-          editable={!loading}
-        />
+        <AuthField label="Email address" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} returnKeyType="done" onSubmitEditing={verifyEmail} editable={!loading} />
       ) : null}
 
       {step === 2 ? (
         <>
-          <View style={styles.questionCard}>
-            <Text style={styles.questionLabel}>Recovery question</Text>
+          <Card style={styles.questionCard}>
+            <Text style={styles.questionLabel}>RECOVERY QUESTION</Text>
             <Text style={styles.questionText}>{foundUser?.securityQuestion}</Text>
-          </View>
-          <AuthField
-            label="Your answer"
-            icon="chatbubble-ellipses-outline"
-            value={securityAnswer}
-            onChangeText={setSecurityAnswer}
-            placeholder="Enter your answer"
-            editable={!loading}
-            returnKeyType="done"
-            onSubmitEditing={verifyAnswer}
-          />
+          </Card>
+          <AuthField label="Your answer" icon="chatbubble-ellipses-outline" value={securityAnswer} onChangeText={setSecurityAnswer} placeholder="Enter your answer" editable={!loading} returnKeyType="done" onSubmitEditing={verifyAnswer} />
         </>
       ) : null}
 
@@ -239,37 +171,20 @@ export default function ForgotPasswordScreen({ navigation }) {
             autoCorrect={false}
             editable={!loading}
             right={(
-              <TouchableOpacity
-                style={styles.iconButton}
+              <IconButton
+                icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
                 onPress={() => setShowPassword((value) => !value)}
-              >
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color={theme.colors.textSecondary}
-                />
-              </TouchableOpacity>
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+              />
             )}
           />
-          {newPassword.length > 0 ? (
-            <PasswordRequirements password={newPassword} requirements={PASSWORD_REQUIREMENTS} />
-          ) : null}
-          <AuthField
-            label="Confirm password"
-            icon="checkmark-circle-outline"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder="Repeat your new password"
-            secureTextEntry={!showPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-          />
+          {newPassword.length > 0 ? <PasswordRequirements password={newPassword} requirements={PASSWORD_REQUIREMENTS} /> : null}
+          <AuthField label="Confirm password" icon="checkmark-circle-outline" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Repeat your new password" secureTextEntry={!showPassword} autoCapitalize="none" autoCorrect={false} editable={!loading} />
         </>
       ) : null}
 
       <AuthError message={error} />
-
       <PrimaryButton
         label={step === 1 ? 'Find account' : step === 2 ? 'Verify answer' : 'Update password'}
         icon={step === 3 ? 'checkmark-outline' : 'arrow-forward-outline'}
@@ -278,8 +193,8 @@ export default function ForgotPasswordScreen({ navigation }) {
       />
 
       {step > 1 ? (
-        <TouchableOpacity style={styles.backStepButton} onPress={goBackStep} disabled={loading}>
-          <Ionicons name="arrow-back-outline" size={17} color={theme.colors.textSecondary} />
+        <TouchableOpacity style={styles.backStepButton} onPress={() => { setError(''); setStep((value) => Math.max(1, value - 1)); }} disabled={loading}>
+          <AppIcon name="arrow-back-outline" size={17} color={theme.colors.textSecondary} />
           <Text style={styles.backStepText}>Previous step</Text>
         </TouchableOpacity>
       ) : null}
@@ -294,6 +209,7 @@ const getStyles = (theme) => StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.md,
   },
+  progressCopy: { flex: 1 },
   stepCount: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.caption,
@@ -307,26 +223,7 @@ const getStyles = (theme) => StyleSheet.create({
     color: theme.colors.text,
     marginTop: spacing.xxs,
   },
-  stepIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: radius.pill,
-    backgroundColor: theme.colors.surfaceMuted,
-    overflow: 'hidden',
-    marginTop: spacing.md,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: radius.pill,
-    backgroundColor: theme.colors.primary,
-  },
+  progressBar: { marginTop: spacing.md },
   stepSubtitle: {
     fontFamily: typography.regular,
     fontSize: typography.sizes.bodySmall,
@@ -335,17 +232,11 @@ const getStyles = (theme) => StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.xl,
   },
-  questionCard: {
-    borderRadius: radius.md,
-    backgroundColor: theme.colors.primarySoft,
-    padding: spacing.md,
-    marginBottom: spacing.lg,
-  },
+  questionCard: { marginBottom: spacing.lg },
   questionLabel: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.caption,
     color: theme.colors.primary,
-    textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   questionText: {
@@ -354,12 +245,6 @@ const getStyles = (theme) => StyleSheet.create({
     lineHeight: typography.lineHeights.body,
     color: theme.colors.text,
     marginTop: spacing.xs,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   backStepButton: {
     minHeight: 44,
