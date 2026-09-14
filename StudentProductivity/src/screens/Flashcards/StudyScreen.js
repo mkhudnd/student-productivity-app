@@ -4,13 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
 import { FlashcardService } from '../../utils/flashcardService';
+import { localDateKey } from '../../utils/planRepository';
 import ScreenLayout from '../../components/ScreenLayout';
 
 const FLASHCARDS_FILE = 'flashcards.json';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 function getTodayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return localDateKey();
 }
 
 function getDueCards(deck) {
@@ -28,7 +29,6 @@ function getProgress(deck) {
 }
 
 function updateSRS(card, correct) {
-  // SM-2 algorithm (simplified)
   let { interval = 1, repetitions = 0, easeFactor = 2.5 } = card;
   let quality = correct ? 5 : 2;
   if (correct) {
@@ -40,7 +40,6 @@ function updateSRS(card, correct) {
   } else {
     repetitions = 0;
     interval = 1;
-    // easeFactor unchanged
   }
   const nextDue = new Date();
   nextDue.setDate(nextDue.getDate() + interval);
@@ -49,25 +48,21 @@ function updateSRS(card, correct) {
     interval,
     repetitions,
     easeFactor,
-    dueDate: nextDue.toISOString().slice(0, 10),
+    dueDate: localDateKey(nextDue),
     lastStudied: getTodayISO(),
     known: correct,
   };
 }
 
 export default function StudyScreen({ route, navigation }) {
-  // Safety check for navigation
   if (!navigation) {
     console.error('StudyScreen: Navigation prop is undefined');
     return null;
   }
-  
-  // Defensive check for navigation methods
   if (typeof navigation.goBack !== 'function') {
     console.error('StudyScreen: navigation.goBack is not a function', navigation);
   }
 
-  // Safe navigation function to prevent undefined errors
   const safeGoBack = () => {
     try {
       if (navigation && typeof navigation.goBack === 'function') {
@@ -97,24 +92,16 @@ export default function StudyScreen({ route, navigation }) {
   const [incorrectCards, setIncorrectCards] = useState([]);
   const [sessionComplete, setSessionComplete] = useState(false);
   const scrollViewRef = useRef(null);
-  
-  // Revision mode states
   const [revisionMode, setRevisionMode] = useState(false);
-  const [timeLimit, setTimeLimit] = useState(30); // total session time in seconds
+  const [timeLimit, setTimeLimit] = useState(30);
   const [timeRemaining, setTimeRemaining] = useState(30);
   const [timerActive, setTimerActive] = useState(false);
   const [showTimerSetup, setShowTimerSetup] = useState(false);
   const timerRef = useRef(null);
-  
-  // Custom time input states
   const [useCustomTime, setUseCustomTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState('2');
   const [customSeconds, setCustomSeconds] = useState('0');
-  
-  // Floating timer states
   const [showFloatingTimer, setShowFloatingTimer] = useState(false);
-  
-  // Add session statistics tracking
   const [sessionStats, setSessionStats] = useState({
     totalAnswered: 0,
     correctAnswers: 0,
@@ -123,8 +110,6 @@ export default function StudyScreen({ route, navigation }) {
     totalTime: 0,
     averageTime: 0
   });
-  
-  // Navigation lock to prevent rapid calls
   const [navigationLocked, setNavigationLocked] = useState(false);
 
   useEffect(() => {
@@ -136,10 +121,6 @@ export default function StudyScreen({ route, navigation }) {
     setAnswerChecked(false);
     setIsCorrect(null);
     setShowBack(false);
-    
-    // Don't reset timer for revision mode when changing cards
-    // Timer should continue running throughout the session
-    
     if (studyAll) {
       setDueCards((deck && deck.cards) ? deck.cards : []);
     } else {
@@ -147,14 +128,12 @@ export default function StudyScreen({ route, navigation }) {
     }
   }, [index, deck]);
 
-  // Timer effect for revision mode - continuous countdown
   useEffect(() => {
     if (revisionMode && timerActive && timeRemaining > 0) {
       timerRef.current = setTimeout(() => {
         setTimeRemaining(prev => prev - 1);
       }, 1000);
     } else if (revisionMode && timeRemaining === 0) {
-      // Time's up - end the entire session
       handleSessionTimeOut();
     }
 
@@ -165,11 +144,8 @@ export default function StudyScreen({ route, navigation }) {
     };
   }, [revisionMode, timerActive, timeRemaining]);
 
-  // Handle scroll to show/hide floating timer
   const handleScroll = (event) => {
     const currentScrollY = event.nativeEvent.contentOffset.y;
-    
-    // Show floating timer if scrolled past timer section (approximately 200px) and in revision mode
     if (revisionMode && currentScrollY > 200) {
       setShowFloatingTimer(true);
     } else {
@@ -196,7 +172,6 @@ export default function StudyScreen({ route, navigation }) {
     setTimeRemaining(timeLimit);
     setTimerActive(true);
     setShowFloatingTimer(false);
-    // Reset stats for revision mode
     setSessionStats({
       totalAnswered: 0,
       correctAnswers: 0,
@@ -210,8 +185,6 @@ export default function StudyScreen({ route, navigation }) {
   function handleSessionTimeOut() {
     setTimerActive(false);
     setShowFloatingTimer(false);
-    
-    // End the entire session when time runs out
     setSessionComplete(true);
   }
 
@@ -221,38 +194,28 @@ export default function StudyScreen({ route, navigation }) {
 
   function nextCard() {
     if (navigationLocked) return;
-    
+
     try {
       setNavigationLocked(true);
       setShowBack(false);
-      
-      // Safety check for dueCards array
       if (!dueCards || !Array.isArray(dueCards)) {
         console.error('dueCards is not a valid array:', dueCards);
         setNavigationLocked(false);
         return;
       }
-      
-      // Don't stop timer in revision mode - let it continue running
       if (index < dueCards.length - 1) {
         setIndex(prev => prev + 1);
       } else {
-        // Completed all cards or session ended
         setTimerActive(false);
         setShowFloatingTimer(false);
         setSessionComplete(true);
       }
-      
-      // Safety check for pan animation
       if (pan && typeof pan.setValue === 'function') {
         pan.setValue({ x: 0, y: 0 });
       }
-      
       setAnswerInput('');
       setAnswerChecked(false);
       setIsCorrect(null);
-      
-      // Unlock navigation after a brief delay
       setTimeout(() => setNavigationLocked(false), 300);
     } catch (error) {
       console.error('Error in nextCard:', error);
@@ -261,1331 +224,353 @@ export default function StudyScreen({ route, navigation }) {
   }
 
   function prevCard() {
-    if (navigationLocked) return;
-    
-    try {
-      setNavigationLocked(true);
+    if (index > 0) {
+      setIndex(prev => prev - 1);
       setShowBack(false);
-      // Don't stop timer in revision mode - let it continue running
-      setIndex((prev) => (prev > 0 ? prev - 1 : prev));
       pan.setValue({ x: 0, y: 0 });
       setAnswerInput('');
       setAnswerChecked(false);
       setIsCorrect(null);
-      
-      // Unlock navigation after a brief delay
-      setTimeout(() => setNavigationLocked(false), 300);
-    } catch (error) {
-      console.error('Error in prevCard:', error);
-      setNavigationLocked(false);
     }
   }
 
-  async function markKnown(known, autoAdvance = false) {
-    if (!deck) return;
-    const dueCard = dueCards[index];
-    const updatedCard = updateSRS(dueCard, known);
-    const updatedCards = deck.cards.map(card => card.id === dueCard.id ? updatedCard : card);
-    const updatedDeck = { ...deck, cards: updatedCards };
-    
-    await FlashcardService.updateDeck(deckId, { cards: updatedCards }, currentUser);
-    setDeck(updatedDeck);
-    
-    if (autoAdvance) {
-      setTimeout(() => {
-        setDueCards(getDueCards(updatedDeck));
-        if (index < getDueCards(updatedDeck).length - 1) nextCard();
-        else setIndex(0);
-      }, 100);
-    } else {
-      // Just update the due cards without advancing
-      setDueCards(getDueCards(updatedDeck));
+  async function markCard(correct) {
+    if (!dueCards.length || !dueCards[index]) return;
+    const currentCard = dueCards[index];
+    const updatedCard = updateSRS(currentCard, correct);
+    await FlashcardService.updateCard(deckId, currentCard.id, updatedCard, currentUser);
+    if (!correct) {
+      setIncorrectCards(prev => [...prev, currentCard]);
     }
-  }
-
-  function checkAnswer() {
-    const timeSpent = revisionMode ? (timeLimit - timeRemaining) : 0;
-    // Don't stop timer in revision mode - let it continue running
-    
-    // Safety checks for deck and cards
-    if (!deck || !deck.cards || !Array.isArray(deck.cards) || index >= deck.cards.length) {
-      console.error('Invalid deck or card index:', { deck, index, cardsLength: deck?.cards?.length });
-      return;
-    }
-    
-    const currentCard = deck.cards[index];
-    if (!currentCard || typeof currentCard.back !== 'string') {
-      console.error('Invalid card or missing back property:', currentCard);
-      return;
-    }
-    
-    const correct = answerInput.trim().toLowerCase() === currentCard.back.trim().toLowerCase();
-    setIsCorrect(correct);
-    setAnswerChecked(true);
-    setShowBack(true);
-    
-    // Update session statistics
     setSessionStats(prev => ({
+      ...prev,
       totalAnswered: prev.totalAnswered + 1,
       correctAnswers: prev.correctAnswers + (correct ? 1 : 0),
       incorrectAnswers: prev.incorrectAnswers + (correct ? 0 : 1),
-      timeoutAnswers: prev.timeoutAnswers,
-      totalTime: prev.totalTime + timeSpent,
-      averageTime: revisionMode ? (prev.totalTime + timeSpent) / (prev.totalAnswered + 1) : prev.averageTime
     }));
-    
-    // Record the result in the SRS system without auto-advance
-    markKnown(correct, false);
-    
-    // Track incorrect answers for review
-    if (!correct) {
-      setIncorrectCards(prev => [...prev, { 
-        front: currentCard.front || 'Unknown', 
-        correct: currentCard.back || 'Unknown', 
-        yourAnswer: answerInput,
-        timeSpent: timeSpent
-      }]);
-    }
-    
-    // Auto-advance to next card if answer is correct
-    if (correct) {
-      setTimeout(() => {
-        nextCard();
-      }, 1500); // 1.5 second delay to show success feedback
-    }
+    await loadDeck();
+    nextCard();
   }
 
-  // Function to scroll to answer input when it gets focus
-  const scrollToAnswerInput = () => {
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  };
-
-  // PanResponder for swipe gestures
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 20 || Math.abs(gestureState.dy) > 20,
-      onPanResponderMove: Animated.event([
-        null,
-        { dx: pan.x, dy: pan.y },
-      ], { useNativeDriver: false }),
-      onPanResponderRelease: (_, gesture) => {
-        try {
-          if (gesture.dx > 80) {
-            prevCard();
-          } else if (gesture.dx < -80) {
-            nextCard();
-          } else if (gesture.dy < -60) {
-            flipCard();
-          }
-          Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
-        } catch (error) {
-          console.error('Error in PanResponder release:', error);
-          // Reset animation in case of error
-          pan.setValue({ x: 0, y: 0 });
-        }
-      },
-    })
-  ).current;
-
-  function handleCustomTimeChange() {
-    const minutes = parseInt(customMinutes) || 0;
-    const seconds = parseInt(customSeconds) || 0;
-    const totalSeconds = (minutes * 60) + seconds;
-    
-    // Validation: minimum 30 seconds, maximum 60 minutes
-    if (totalSeconds < 30) {
-      setCustomMinutes('0');
-      setCustomSeconds('30');
-      setTimeLimit(30);
-    } else if (totalSeconds > 3600) {
-      setCustomMinutes('60');
-      setCustomSeconds('0');
-      setTimeLimit(3600);
-    } else {
-      setTimeLimit(totalSeconds);
-    }
+  function checkTypedAnswer() {
+    if (!dueCards.length || !dueCards[index]) return;
+    const normalizedExpected = String(dueCards[index].back || '').trim().toLowerCase();
+    const normalizedAnswer = answerInput.trim().toLowerCase();
+    const correct = Boolean(normalizedAnswer) && normalizedExpected === normalizedAnswer;
+    setAnswerChecked(true);
+    setIsCorrect(correct);
   }
 
-  function handlePresetTimeSelect(seconds) {
-    setTimeLimit(seconds);
-    setUseCustomTime(false);
-  }
+  const currentCard = dueCards[index];
+  const progress = getProgress(deck);
 
-  function handleCustomTimeToggle() {
-    setUseCustomTime(!useCustomTime);
-    if (!useCustomTime) {
-      // Switching to custom time - convert current timeLimit to minutes/seconds
-      const minutes = Math.floor(timeLimit / 60);
-      const seconds = timeLimit % 60;
-      setCustomMinutes(minutes.toString());
-      setCustomSeconds(seconds.toString());
-    }
-  }
+  const panResponder = PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 14,
+    onPanResponderMove: Animated.event([null, { dx: pan.x }], { useNativeDriver: false }),
+    onPanResponderRelease: (_, gesture) => {
+      if (gesture.dx > 90) {
+        markCard(true);
+      } else if (gesture.dx < -90) {
+        markCard(false);
+      } else {
+        Animated.spring(pan, {
+          toValue: { x: 0, y: 0 },
+          useNativeDriver: false,
+        }).start();
+      }
+    },
+  });
 
   const styles = getStyles(theme);
 
-  if (loading || !deck) {
+  if (loading) {
     return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Study Session"
-        headerIcon="school-outline"
-        navigation={navigation}
-      >
-        <View style={styles.loadingContainer}>
-          <Ionicons name="hourglass-outline" size={48} color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading study session...</Text>
+      <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}>
+        <View style={styles.centerState}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={styles.centerStateText}>Preparing cards…</Text>
         </View>
       </ScreenLayout>
     );
   }
 
-  if (!deck.cards.length) {
+  if (!deck) {
     return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Study Session"
-        headerIcon="school-outline"
-        navigation={navigation}
-      >
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyCard}>
-            <Ionicons name="albums-outline" size={64} color={theme.colors.textSecondary} />
-            <Text style={styles.emptyTitle}>No Cards Available</Text>
-            <Text style={styles.emptySubtitle}>This deck doesn't contain any flashcards yet.</Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.goBack()}>
-              <Ionicons name="add-outline" size={20} color={theme.colors.background} />
-              <Text style={styles.primaryButtonText}>Add Cards</Text>
-            </TouchableOpacity>
-          </View>
+      <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}>
+        <View style={styles.centerState}>
+          <Text style={styles.emptyTitle}>Deck not found</Text>
+          <TouchableOpacity style={styles.doneButton} onPress={safeGoBack}>
+            <Text style={styles.doneButtonText}>Go back</Text>
+          </TouchableOpacity>
         </View>
       </ScreenLayout>
     );
   }
 
-  if (!dueCards.length) {
-    // No cards available to study - show different message
+  if (sessionComplete || dueCards.length === 0) {
     return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Study Session"
-        headerIcon="school-outline"
-        scrollable={true}
-        navigation={navigation}
-      >
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Study Complete</Text>
-            <View style={styles.completeCard}>
-              <Ionicons name="checkmark-circle-outline" size={64} color={theme.colors.primary} />
-              <Text style={styles.completeTitle}>{deck?.title || ''}</Text>
-              <Text style={styles.completeSubtitle}>
-                {studyAll ? 'No cards in this deck.' : 'All cards are up to date! No cards due for review today.'}
-              </Text>
-              
-              <View style={styles.actionButtons}>
-                <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.goBack()}>
-                  <Ionicons name="library-outline" size={20} color={theme.colors.background} />
-                  <Text style={styles.primaryButtonText}>Back to Decks</Text>
-                </TouchableOpacity>
-                {!studyAll && (
-                  <TouchableOpacity 
-                    style={styles.secondaryButton} 
-                    onPress={() => {
-                      // Reset and study all cards
-                      setSessionStats({
-                        totalAnswered: 0,
-                        correctAnswers: 0,
-                        incorrectAnswers: 0
-                      });
-                      setIndex(0);
-                      setSessionComplete(false);
-                      setDueCards(deck.cards || []);
-                    }}
-                  >
-                    <Ionicons name="refresh-outline" size={20} color={theme.colors.primary} />
-                    <Text style={styles.secondaryButtonText}>Study All Cards</Text>
-                  </TouchableOpacity>
-                )}
-                <TouchableOpacity 
-                  style={styles.accentButton} 
-                  onPress={() => setShowTimerSetup(true)}
-                >
-                  <Ionicons name="timer-outline" size={20} color={theme.colors.background} />
-                  <Text style={styles.accentButtonText}>Restart Revision</Text>
-                </TouchableOpacity>
-              </View>
+      <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation} scrollable>
+        <View style={styles.completeCard}>
+          <View style={styles.completeIcon}>
+            <Ionicons name="checkmark-circle" size={34} color={theme.colors.accent} />
+          </View>
+          <Text style={styles.completeTitle}>{dueCards.length === 0 && !sessionComplete ? 'Nothing due right now' : 'Review complete'}</Text>
+          <Text style={styles.completeText}>
+            {sessionStats.totalAnswered > 0
+              ? `${sessionStats.correctAnswers} correct · ${sessionStats.incorrectAnswers} to revisit`
+              : 'You are caught up with this learning set.'}
+          </Text>
+          <View style={styles.completeStats}>
+            <View style={styles.completeStat}>
+              <Text style={styles.completeStatValue}>{progress.percent}%</Text>
+              <Text style={styles.completeStatLabel}>Mastered</Text>
+            </View>
+            <View style={styles.completeStat}>
+              <Text style={styles.completeStatValue}>{deck.cards.length}</Text>
+              <Text style={styles.completeStatLabel}>Cards</Text>
             </View>
           </View>
-      </ScreenLayout>
-    );
-  }
-
-  if (sessionComplete) {
-    // Session completed after answering questions - show statistics
-    const total = sessionStats.totalAnswered;
-    const correct = sessionStats.correctAnswers;
-    const incorrect = sessionStats.incorrectAnswers;
-    const timeouts = sessionStats.timeoutAnswers;
-    const accuracy = total > 0 ? Math.round((correct / total) * 100) : 0;
-    const timeElapsed = timeLimit - timeRemaining;
-    
-    const handleStudyAgain = () => {
-      setIndex(0);
-      setIncorrectCards([]);
-      setSessionComplete(false);
-      setAnswerInput('');
-      setAnswerChecked(false);
-      setIsCorrect(null);
-      setShowBack(false);
-      setTimerActive(false);
-      setShowFloatingTimer(false);
-      if (timerRef.current) clearTimeout(timerRef.current);
-      
-      // Reset session statistics
-      setSessionStats({
-        totalAnswered: 0,
-        correctAnswers: 0,
-        incorrectAnswers: 0,
-        timeoutAnswers: 0,
-        totalTime: 0,
-        averageTime: 0
-      });
-      if (studyAll) {
-        setDueCards((deck && deck.cards) ? deck.cards : []);
-      } else {
-        setDueCards(getDueCards(deck || { cards: [] }));
-      }
-    };
-    
-    return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Session Complete"
-        headerIcon="trophy-outline"
-        scrollable={true}
-        navigation={navigation}
-      >
-          {/* Session Results */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-              {revisionMode ? 
-                (timeRemaining === 0 ? 'Time\'s Up!' : 'Revision Complete!') : 
-                'Session Complete!'
-              }
-            </Text>
-            <View style={styles.resultsCard}>
-              <View style={styles.resultsHeader}>
-                <Ionicons 
-                  name={revisionMode ? 
-                    (timeRemaining === 0 ? "time-outline" : "timer-outline") : 
-                    "trophy-outline"
-                  } 
-                  size={32} 
-                  color={timeRemaining === 0 ? "#FF9800" : theme.colors.primary} 
-                />
-                <Text style={styles.resultsTitle}>{deck?.title || ''}</Text>
-                {revisionMode && (
-                  <Text style={styles.revisionModeLabel}>
-                    ⏱️ {Math.floor(timeLimit / 60)}:{(timeLimit % 60).toString().padStart(2, '0')} session time
-                  </Text>
-                )}
-                {revisionMode && timeRemaining === 0 && (
-                  <Text style={styles.timeoutSessionLabel}>
-                    Session ended - time ran out
-                  </Text>
-                )}
-              </View>
-              
-              {total > 0 ? (
-                <>
-                  <View style={styles.scoreContainer}>
-                    <Text style={styles.scoreText}>{correct} / {total}</Text>
-                    <Text style={styles.accuracyText}>{accuracy}% Accuracy</Text>
-                    {revisionMode && (
-                      <Text style={styles.averageTimeText}>
-                        Completed in {Math.floor(timeElapsed / 60)}:{(timeElapsed % 60).toString().padStart(2, '0')}
-                      </Text>
-                    )}
-                  </View>
-                  
-                  <View style={styles.statsContainer}>
-                    <View style={styles.statItem}>
-                      <Ionicons name="checkmark-circle-outline" size={24} color="#4CAF50" />
-                      <Text style={styles.statValue}>{correct}</Text>
-                      <Text style={styles.statLabel}>Correct</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Ionicons name="close-circle-outline" size={24} color="#F44336" />
-                      <Text style={styles.statValue}>{incorrect}</Text>
-                      <Text style={styles.statLabel}>Incorrect</Text>
-                    </View>
-                    <View style={styles.statItem}>
-                      <Ionicons name="albums-outline" size={24} color={theme.colors.primary} />
-                      <Text style={styles.statValue}>{total}</Text>
-                      <Text style={styles.statLabel}>Answered</Text>
-                    </View>
-                    {revisionMode && (
-                      <View style={styles.statItem}>
-                        <Ionicons name="hourglass-outline" size={24} color={theme.colors.textSecondary} />
-                        <Text style={styles.statValue}>{dueCards.length - total}</Text>
-                        <Text style={styles.statLabel}>Remaining</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {revisionMode && (
-                    <View style={styles.timeStatsContainer}>
-                      <View style={styles.timeStatItem}>
-                        <Text style={styles.timeStatLabel}>Time Used:</Text>
-                        <Text style={styles.timeStatValue}>
-                          {Math.floor(timeElapsed / 60)}m {timeElapsed % 60}s
-                        </Text>
-                      </View>
-                      {timeRemaining > 0 && (
-                        <View style={styles.timeStatItem}>
-                          <Text style={styles.timeStatLabel}>Time Left:</Text>
-                          <Text style={styles.timeStatValue}>
-                            {Math.floor(timeRemaining / 60)}m {timeRemaining % 60}s
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  )}
-                </>
-              ) : (
-                <Text style={styles.noStudyText}>No cards studied in this session.</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Incorrect Answers Review */}
-          {incorrectCards.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Review Incorrect Answers
-              </Text>
-              {incorrectCards.map((c, i) => (
-                <View key={i} style={styles.reviewCard}>
-                  <View style={styles.reviewHeader}>
-                    <Ionicons name="help-circle-outline" size={20} color={theme.colors.primary} />
-                    <Text style={styles.reviewQuestion}>{c.front}</Text>
-                  </View>
-                  <View style={styles.reviewContent}>
-                    <View style={styles.reviewAnswer}>
-                      <Ionicons name="close-outline" size={16} color="#F44336" />
-                      <Text style={styles.incorrectAnswer}>
-                        Your answer: {c.yourAnswer}
-                      </Text>
-                    </View>
-                    <View style={styles.reviewAnswer}>
-                      <Ionicons name="checkmark-outline" size={16} color="#4CAF50" />
-                      <Text style={styles.correctAnswer}>Correct answer: {c.correct}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Action Buttons */}
-          <View style={styles.section}>
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.primaryButton} onPress={() => navigation.goBack()}>
-                <Ionicons name="library-outline" size={20} color={theme.colors.background} />
-                <Text style={styles.primaryButtonText}>Back to Decks</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.secondaryButton} onPress={handleStudyAgain}>
-                <Ionicons 
-                  name={revisionMode ? "timer-outline" : "refresh-outline"} 
-                  size={20} 
-                  color={theme.colors.primary} 
-                />
-                <Text style={styles.secondaryButtonText}>
-                  {revisionMode ? 'Revision Again' : 'Study Again'}
-                </Text>
-              </TouchableOpacity>
-              {revisionMode && (
-                <TouchableOpacity 
-                  style={styles.secondaryButton} 
-                  onPress={() => {
-                    setRevisionMode(false);
-                    handleStudyAgain();
-                  }}
-                >
-                  <Ionicons name="book-outline" size={20} color={theme.colors.primary} />
-                  <Text style={styles.secondaryButtonText}>Normal Study</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-      </ScreenLayout>
-    );
-  }
-
-  // Safety check for card access
-  const card = dueCards && Array.isArray(dueCards) && index < dueCards.length ? dueCards[index] : null;
-  const progress = getProgress(deck);
-  
-  // If no valid card, show error state
-  if (!card) {
-    return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Study Session"
-        headerIcon="school-outline"
-        navigation={navigation}
-      >
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyCard}>
-            <Ionicons name="alert-circle-outline" size={64} color={theme.colors.textSecondary} />
-            <Text style={styles.emptyTitle}>Card Error</Text>
-            <Text style={styles.emptySubtitle}>Unable to load the current flashcard. Please try again.</Text>
-            <TouchableOpacity style={styles.primaryButton} onPress={safeGoBack}>
-              <Ionicons name="arrow-back-outline" size={20} color={theme.colors.background} />
-              <Text style={styles.primaryButtonText}>Go Back</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.doneButton} onPress={safeGoBack}>
+            <Text style={styles.doneButtonText}>Done</Text>
+          </TouchableOpacity>
         </View>
-      </ScreenLayout>
-    );
-  }
-
-  // Timer setup modal
-  if (showTimerSetup) {
-    return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Timer Setup"
-        headerIcon="timer-outline"
-        scrollable={true}
-        navigation={navigation}
-      >
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Revision Mode Setup</Text>
-            <View style={styles.setupCard}>
-              <View style={styles.setupHeader}>
-                <Ionicons name="timer-outline" size={32} color={theme.colors.primary} />
-                <Text style={styles.setupTitle}>Timed Study Session</Text>
-              </View>
-              
-              <Text style={styles.setupDescription}>
-                Race against the clock! You have a limited time to complete all flashcards. 
-                The timer counts down continuously - if it reaches zero, the session ends immediately.
-              </Text>
-              
-              <View style={styles.timeLimitSection}>
-                <View style={styles.timeTypeToggle}>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, !useCustomTime && styles.toggleOptionActive]}
-                    onPress={() => setUseCustomTime(false)}
-                  >
-                    <Text style={[styles.toggleOptionText, !useCustomTime && styles.toggleOptionTextActive]}>
-                      Preset Times
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.toggleOption, useCustomTime && styles.toggleOptionActive]}
-                    onPress={handleCustomTimeToggle}
-                  >
-                    <Text style={[styles.toggleOptionText, useCustomTime && styles.toggleOptionTextActive]}>
-                      Custom Time
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {!useCustomTime ? (
-                  <>
-                    <Text style={styles.timeLimitLabel}>Choose session time:</Text>
-                    <View style={styles.timeLimitOptions}>
-                      {[
-                        { seconds: 60, label: '1m' },
-                        { seconds: 120, label: '2m' },
-                        { seconds: 300, label: '5m' },
-                        { seconds: 600, label: '10m' }
-                      ].map(time => (
-                        <TouchableOpacity
-                          key={time.seconds}
-                          style={[styles.timeLimitOption, timeLimit === time.seconds && styles.timeLimitOptionSelected]}
-                          onPress={() => handlePresetTimeSelect(time.seconds)}
-                        >
-                          <Text style={[styles.timeLimitOptionText, timeLimit === time.seconds && styles.timeLimitOptionTextSelected]}>
-                            {time.label}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.timeLimitLabel}>Set custom time:</Text>
-                    <View style={styles.customTimeContainer}>
-                      <View style={styles.customTimeInput}>
-                        <TextInput
-                          style={styles.timeInput}
-                          value={customMinutes}
-                          onChangeText={setCustomMinutes}
-                          onBlur={handleCustomTimeChange}
-                          keyboardType="numeric"
-                          maxLength={2}
-                          placeholder="0"
-                          placeholderTextColor={theme.colors.textSecondary}
-                        />
-                        <Text style={styles.timeLabel}>min</Text>
-                      </View>
-                      <Text style={styles.timeSeparator}>:</Text>
-                      <View style={styles.customTimeInput}>
-                        <TextInput
-                          style={styles.timeInput}
-                          value={customSeconds}
-                          onChangeText={setCustomSeconds}
-                          onBlur={handleCustomTimeChange}
-                          keyboardType="numeric"
-                          maxLength={2}
-                          placeholder="0"
-                          placeholderTextColor={theme.colors.textSecondary}
-                        />
-                        <Text style={styles.timeLabel}>sec</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.customTimeHint}>
-                      Min: 30 seconds • Max: 60 minutes
-                    </Text>
-                  </>
-                )}
-              </View>
-              
-              <View style={styles.deckInfoPreview}>
-                <Text style={styles.previewLabel}>You'll study:</Text>
-                <Text style={styles.previewText}>
-                  📚 {deck.title}
-                </Text>
-                <Text style={styles.previewText}>
-                  📋 {dueCards.length} cards
-                </Text>
-                <Text style={styles.previewText}>
-                  ⏱️ {Math.floor(timeLimit / 60)}m {timeLimit % 60}s total time
-                </Text>
-                <Text style={styles.previewText}>
-                  🎯 ~{Math.round(timeLimit / dueCards.length)}s per card
-                </Text>
-              </View>
-              
-              <View style={styles.setupButtons}>
-                <TouchableOpacity style={styles.primaryButton} onPress={startRevisionMode}>
-                  <Ionicons name="play-outline" size={20} color={theme.colors.background} />
-                  <Text style={styles.primaryButtonText}>Start Revision</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.secondaryButton} onPress={() => setShowTimerSetup(false)}>
-                  <Ionicons name="book-outline" size={20} color={theme.colors.primary} />
-                  <Text style={styles.secondaryButtonText}>Normal Study</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
       </ScreenLayout>
     );
   }
 
   return (
     <ScreenLayout
-      showHeader={true}
-      headerTitle="Study Session"
-      headerIcon="school-outline"
-      headerRight={
-        !revisionMode ? (
-          <TouchableOpacity 
-            style={styles.revisionButton} 
-            onPress={() => setShowTimerSetup(true)}
-          >
-            <Ionicons name="timer-outline" size={20} color={theme.colors.background} />
-            <Text style={styles.revisionButtonText}>Revision Mode</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity 
-            style={styles.normalModeButton} 
-            onPress={() => {
-              setRevisionMode(false);
-              setTimerActive(false);
-              setShowFloatingTimer(false);
-              if (timerRef.current) clearTimeout(timerRef.current);
-            }}
-          >
-            <Ionicons name="book-outline" size={20} color={theme.colors.primary} />
-            <Text style={styles.normalModeButtonText}>Normal Mode</Text>
-          </TouchableOpacity>
-        )
-      }
+      showHeader
+      headerTitle={deck.title}
+      showBackButton
       navigation={navigation}
+      scrollable
+      contentContainerStyle={styles.content}
     >
-      
-      {/* Floating Timer */}
-      {showFloatingTimer && revisionMode && (
-        <View style={styles.floatingTimer}>
-          <View style={styles.floatingTimerContent}>
-            <Ionicons name="timer-outline" size={16} color={theme.colors.primary} />
-            <Text style={[
-              styles.floatingTimerText, 
-              timeRemaining <= 30 && styles.floatingTimerWarning,
-              timeRemaining <= 10 && styles.floatingTimerDanger
-            ]}>
-              {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')}
-            </Text>
-            <View style={styles.floatingTimerBar}>
-              <View 
-                style={[
-                  styles.floatingTimerProgress,
-                  { 
-                    width: `${(timeRemaining / timeLimit) * 100}%`,
-                    backgroundColor: timeRemaining <= 10 ? '#F44336' : timeRemaining <= 30 ? '#FF9800' : theme.colors.primary
-                  }
-                ]} 
-              />
-            </View>
+      <View style={styles.progressHeader}>
+        <Text style={styles.progressLabel}>Card {index + 1} of {dueCards.length}</Text>
+        <Text style={styles.progressPercent}>{progress.percent}% mastered</Text>
+      </View>
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: `${dueCards.length ? ((index + 1) / dueCards.length) * 100 : 0}%` }]} />
+      </View>
+
+      {revisionMode ? (
+        <View style={styles.timerCard}>
+          <Ionicons name="timer-outline" size={20} color={theme.colors.primary} />
+          <View style={styles.timerCopy}>
+            <Text style={styles.timerLabel}>Revision timer</Text>
+            <Text style={styles.timerValue}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text>
           </View>
+          <TouchableOpacity onPress={() => setTimerActive(value => !value)}>
+            <Ionicons name={timerActive ? 'pause-circle-outline' : 'play-circle-outline'} size={28} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity style={styles.revisionLink} onPress={() => setShowTimerSetup(true)}>
+          <Ionicons name="timer-outline" size={18} color={theme.colors.primary} />
+          <Text style={styles.revisionLinkText}>Timed revision mode</Text>
+        </TouchableOpacity>
+      )}
+
+      <Animated.View
+        style={[styles.flashcard, { transform: [{ translateX: pan.x }] }]}
+        {...panResponder.panHandlers}
+      >
+        <TouchableOpacity style={styles.flashcardTouch} onPress={flipCard} activeOpacity={0.9}>
+          <Text style={styles.faceLabel}>{showBack ? 'ANSWER' : 'QUESTION'}</Text>
+          <Text style={styles.faceText}>{showBack ? currentCard.back : currentCard.front}</Text>
+          <View style={styles.flipHint}>
+            <Ionicons name="sync-outline" size={16} color={theme.colors.textMuted} />
+            <Text style={styles.flipHintText}>Tap to flip</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+
+      {showBack ? (
+        <View style={styles.answerActions}>
+          <TouchableOpacity style={styles.againButton} onPress={() => markCard(false)}>
+            <Ionicons name="refresh-outline" size={19} color={theme.colors.error} />
+            <Text style={styles.againText}>Again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.knowButton} onPress={() => markCard(true)}>
+            <Ionicons name="checkmark" size={19} color={theme.colors.primaryText} />
+            <Text style={styles.knowText}>I knew this</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.typeAnswerCard}>
+          <Text style={styles.answerLabel}>Or type your answer</Text>
+          <TextInput
+            style={styles.answerInput}
+            value={answerInput}
+            onChangeText={(value) => {
+              setAnswerInput(value);
+              setAnswerChecked(false);
+              setIsCorrect(null);
+            }}
+            placeholder="Type the answer from memory"
+            placeholderTextColor={theme.colors.placeholder}
+            onSubmitEditing={checkTypedAnswer}
+          />
+          <TouchableOpacity style={styles.checkButton} onPress={checkTypedAnswer}>
+            <Text style={styles.checkButtonText}>Check answer</Text>
+          </TouchableOpacity>
+          {answerChecked ? (
+            <Text style={[styles.answerFeedback, { color: isCorrect ? theme.colors.accent : theme.colors.error }]}> 
+              {isCorrect ? 'Correct' : 'Not quite — flip the card to review it.'}
+            </Text>
+          ) : null}
         </View>
       )}
-      
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
-        <ScrollView 
-          ref={scrollViewRef}
-          style={styles.content} 
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContainer}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-        >
-          {/* Revision Mode Timer */}
-          {revisionMode && (
-            <View style={styles.section}>
-              <View style={styles.timerCard}>
-                <View style={styles.timerHeader}>
-                  <Ionicons name="timer-outline" size={24} color={theme.colors.primary} />
-                  <Text style={styles.timerTitle}>Revision Mode</Text>
-                </View>
-                
-                <View style={styles.timerDisplay}>
-                  <Text style={[
-                    styles.timerText, 
-                    timeRemaining <= 30 && styles.timerWarning,
-                    timeRemaining <= 10 && styles.timerDanger
-                  ]}>
-                    {Math.floor(timeRemaining / 60)}:{(timeRemaining % 60).toString().padStart(2, '0')}
-                  </Text>
-                  <View style={styles.timerBarContainer}>
-                    <View style={styles.timerBarBg}>
-                      <Animated.View 
-                        style={[
-                          styles.timerBar,
-                          { 
-                            width: `${(timeRemaining / timeLimit) * 100}%`,
-                            backgroundColor: timeRemaining <= 10 ? '#F44336' : timeRemaining <= 30 ? '#FF9800' : theme.colors.primary
-                          }
-                        ]} 
-                      />
-                    </View>
-                  </View>
-                  {timeRemaining <= 30 && (
-                    <Text style={styles.timerWarningText}>
-                      {timeRemaining === 0 ? '⏰ Time\'s up! Session ending...' : 
-                       timeRemaining <= 10 ? '⚠️ Hurry up!' : '⏳ Time running out!'}
-                    </Text>
-                  )}
-                </View>
-              </View>
-            </View>
-          )}
 
-          {/* Deck Info */}
-          <View style={styles.section}>
-            <View style={styles.deckInfoCard}>
-              <View style={styles.deckInfoHeader}>
-                <Ionicons name="library-outline" size={24} color={theme.colors.primary} />
-                <View style={styles.deckInfoText}>
-                  <Text style={styles.deckTitle}>{deck.title}</Text>
-                  <Text style={styles.deckSubtitle}>
-                    {revisionMode ? `⏱️ Revision Mode • ` : ''}
-                    {studyAll ? `${dueCards.length} cards total` : `${dueCards.length} cards due today`}
-                  </Text>
-                </View>
-              </View>
-            </View>
+      <View style={styles.navigationRow}>
+        <TouchableOpacity style={[styles.navButton, index === 0 && styles.navButtonDisabled]} onPress={prevCard} disabled={index === 0}>
+          <Ionicons name="chevron-back" size={19} color={index === 0 ? theme.colors.textMuted : theme.colors.text} />
+          <Text style={[styles.navButtonText, index === 0 && { color: theme.colors.textMuted }]}>Previous</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.navButton} onPress={nextCard}>
+          <Text style={styles.navButtonText}>Skip</Text>
+          <Ionicons name="chevron-forward" size={19} color={theme.colors.text} />
+        </TouchableOpacity>
+      </View>
+
+      {showTimerSetup ? (
+        <View style={styles.timerSetupCard}>
+          <Text style={styles.timerSetupTitle}>Timed revision</Text>
+          <Text style={styles.timerSetupText}>Set a total session time, then work through as many cards as you can.</Text>
+          <View style={styles.timerPresetRow}>
+            {[30, 60, 120].map(seconds => (
+              <TouchableOpacity
+                key={seconds}
+                style={[styles.timerPreset, timeLimit === seconds && styles.timerPresetActive]}
+                onPress={() => {
+                  setUseCustomTime(false);
+                  setTimeLimit(seconds);
+                }}
+              >
+                <Text style={[styles.timerPresetText, timeLimit === seconds && styles.timerPresetTextActive]}>{seconds}s</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-
-          {/* Session Progress */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Session Progress</Text>
-            <View style={styles.sessionCard}>
-              <View style={styles.sessionProgress}>
-                <View style={styles.progressStats}>
-                  <View style={styles.progressStat}>
-                    <Text style={styles.progressStatValue}>{sessionStats.totalAnswered}</Text>
-                    <Text style={styles.progressStatLabel}>Answered</Text>
-                  </View>
-                  <View style={styles.progressStat}>
-                    <Text style={[styles.progressStatValue, { color: '#4CAF50' }]}>{sessionStats.correctAnswers}</Text>
-                    <Text style={styles.progressStatLabel}>Correct</Text>
-                  </View>
-                  <View style={styles.progressStat}>
-                    <Text style={[styles.progressStatValue, { color: '#F44336' }]}>{sessionStats.incorrectAnswers}</Text>
-                    <Text style={styles.progressStatLabel}>Incorrect</Text>
-                  </View>
-                  {sessionStats.totalAnswered > 0 && (
-                    <View style={styles.progressStat}>
-                      <Text style={styles.progressStatValue}>
-                        {Math.round((sessionStats.correctAnswers / sessionStats.totalAnswered) * 100)}%
-                      </Text>
-                      <Text style={styles.progressStatLabel}>Accuracy</Text>
-                    </View>
-                  )}
-                  {revisionMode && (
-                    <View style={styles.progressStat}>
-                      <Text style={styles.progressStatValue}>
-                        {Math.floor((timeLimit - timeRemaining) / 60)}:{((timeLimit - timeRemaining) % 60).toString().padStart(2, '0')}
-                      </Text>
-                      <Text style={styles.progressStatLabel}>Elapsed</Text>
-                    </View>
-                  )}
-                </View>
-                
-                <View style={styles.cardProgress}>
-                  <Text style={styles.cardProgressText}>
-                    Card {index + 1} of {dueCards.length}
-                  </Text>
-                  <View style={styles.progressBarBg}>
-                    <View 
-                      style={[
-                        styles.progressBar, 
-                        { width: `${((index + 1) / dueCards.length) * 100}%` }
-                      ]} 
-                    />
-                  </View>
-                </View>
-              </View>
+          <TouchableOpacity style={styles.customTimeToggle} onPress={() => setUseCustomTime(value => !value)}>
+            <Text style={styles.customTimeToggleText}>Custom time</Text>
+          </TouchableOpacity>
+          {useCustomTime ? (
+            <View style={styles.customTimeRow}>
+              <TextInput
+                style={styles.customTimeInput}
+                value={customMinutes}
+                onChangeText={setCustomMinutes}
+                keyboardType="number-pad"
+                placeholder="Min"
+                placeholderTextColor={theme.colors.placeholder}
+              />
+              <TextInput
+                style={styles.customTimeInput}
+                value={customSeconds}
+                onChangeText={setCustomSeconds}
+                keyboardType="number-pad"
+                placeholder="Sec"
+                placeholderTextColor={theme.colors.placeholder}
+              />
             </View>
-          </View>
-
-          {/* Overall Deck Progress */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Deck Progress</Text>
-            <View style={styles.deckProgressCard}>
-              <View style={styles.deckProgressStats}>
-                <View style={styles.deckProgressStat}>
-                  <Ionicons name="checkmark-circle-outline" size={20} color="#4CAF50" />
-                  <Text style={styles.deckProgressValue}>{progress.known}</Text>
-                  <Text style={styles.deckProgressLabel}>Mastered</Text>
-                </View>
-                <View style={styles.deckProgressStat}>
-                  <Ionicons name="school-outline" size={20} color={theme.colors.primary} />
-                  <Text style={styles.deckProgressValue}>{progress.studied - progress.known}</Text>
-                  <Text style={styles.deckProgressLabel}>Learning</Text>
-                </View>
-                <View style={styles.deckProgressStat}>
-                  <Ionicons name="hourglass-outline" size={20} color={theme.colors.textSecondary} />
-                  <Text style={styles.deckProgressValue}>{progress.total - progress.studied}</Text>
-                  <Text style={styles.deckProgressLabel}>New</Text>
-                </View>
-              </View>
-              <View style={styles.overallProgressContainer}>
-                <View style={styles.progressBarBg}>
-                  <View 
-                    style={[
-                      styles.progressBar, 
-                      { width: `${progress.percent}%` }
-                    ]} 
-                  />
-                </View>
-                <Text style={styles.overallProgressText}>{progress.percent}% mastered</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Flashcard */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Flashcard</Text>
-            <Animated.View
-              style={[styles.flashcard, pan.getLayout()]}
-              {...panResponder.panHandlers}
+          ) : null}
+          <View style={styles.timerSetupActions}>
+            <TouchableOpacity style={styles.timerCancelButton} onPress={() => setShowTimerSetup(false)}>
+              <Text style={styles.timerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.timerStartButton}
+              onPress={() => {
+                if (useCustomTime) {
+                  const seconds = Math.max(1, Number(customMinutes || 0) * 60 + Number(customSeconds || 0));
+                  setTimeLimit(seconds);
+                  setTimeRemaining(seconds);
+                }
+                startRevisionMode();
+              }}
             >
-              <TouchableOpacity onPress={flipCard} style={styles.cardTouchable}>
-                <View style={styles.cardHeader}>
-                  <Ionicons 
-                    name={showBack ? "checkmark-circle-outline" : "help-circle-outline"} 
-                    size={24} 
-                    color={theme.colors.primary} 
-                  />
-                  <Text style={styles.cardLabel}>
-                    {showBack ? 'Answer' : 'Question'}
-                  </Text>
-                </View>
-                <Text style={styles.cardText}>{showBack ? (card?.back || 'No answer available') : (card?.front || 'No question available')}</Text>
-                
-                {!showBack && !answerChecked && (
-                  <View style={styles.answerSection}>
-                    <Text style={styles.answerLabel}>Your Answer:</Text>
-                    <TextInput
-                      style={styles.answerInput}
-                      placeholder="Type your answer here..."
-                      placeholderTextColor={theme.colors.textSecondary}
-                      value={answerInput}
-                      onChangeText={setAnswerInput}
-                      editable={!answerChecked && (revisionMode ? timeRemaining > 0 : true)}
-                      onSubmitEditing={checkAnswer}
-                      onFocus={scrollToAnswerInput}
-                      returnKeyType="done"
-                      multiline
-                      blurOnSubmit={true}
-                    />
-                    <TouchableOpacity 
-                      style={[
-                        styles.checkButton, 
-                        (!answerInput.trim() || answerChecked || (revisionMode && timeRemaining === 0)) && styles.disabledButton
-                      ]} 
-                      onPress={checkAnswer} 
-                      disabled={answerChecked || !answerInput.trim() || (revisionMode && timeRemaining === 0)}
-                    >
-                      <Ionicons name="checkmark-outline" size={20} color={theme.colors.background} />
-                      <Text style={styles.checkButtonText}>Check Answer</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-                
-                {answerChecked && (
-                  <View style={styles.resultSection}>
-                    <View style={[
-                      styles.resultCard, 
-                      isCorrect ? styles.correctResult : styles.incorrectResult,
-                      timeRemaining === 0 && !isCorrect && styles.timeoutResult
-                    ]}>
-                      <Ionicons 
-                        name={
-                          timeRemaining === 0 && !isCorrect ? "time-outline" :
-                          isCorrect ? "checkmark-circle" : "close-circle"
-                        } 
-                        size={32} 
-                        color={
-                          timeRemaining === 0 && !isCorrect ? "#FF9800" :
-                          isCorrect ? "#4CAF50" : "#F44336"
-                        } 
-                      />
-                      <Text style={[
-                        styles.resultText, 
-                        timeRemaining === 0 && !isCorrect ? styles.timeoutText :
-                        isCorrect ? styles.correctText : styles.incorrectText
-                      ]}>
-                        {timeRemaining === 0 && !isCorrect ? 'Time Out!' : 
-                         isCorrect ? 'Correct!' : 'Incorrect'}
-                      </Text>
-                      {!isCorrect && (
-                        <Text style={styles.correctAnswerText}>
-                          Correct answer: {card?.back || 'No answer available'}
-                        </Text>
-                      )}
-                      {revisionMode && isCorrect && (
-                        <Text style={styles.timeSpentText}>
-                          ⏱️ Answered in {timeLimit - timeRemaining} seconds
-                        </Text>
-                      )}
-                    </View>
-                    
-                    <TouchableOpacity style={styles.nextButton} onPress={nextCard}>
-                      <Text style={styles.nextButtonText}>
-                        {index === dueCards.length - 1 ? 'Finish Session' : 'Next Card'}
-                      </Text>
-                      <Ionicons 
-                        name={index === dueCards.length - 1 ? "checkmark-outline" : "arrow-forward-outline"} 
-                        size={20} 
-                        color={theme.colors.background} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-                
-                <Text style={styles.swipeHint}>
-                  <Ionicons name="hand-left-outline" size={16} color={theme.colors.textSecondary} />
-                  {revisionMode ? 
-                    ' Quick! Swipe or tap to flip • Time is running!' :
-                    ' Swipe or tap to flip • Swipe left/right to navigate'
-                  }
-                </Text>
-              </TouchableOpacity>
-            </Animated.View>
+              <Text style={styles.timerStartText}>Start timer</Text>
+            </TouchableOpacity>
           </View>
+        </View>
+      ) : null}
 
-          {/* Navigation */}
-          <View style={styles.section}>
-            <View style={styles.navRow}>
-              <TouchableOpacity 
-                onPress={prevCard} 
-                disabled={index === 0} 
-                style={[styles.navButton, index === 0 && styles.disabledButton]}
-              >
-                <Ionicons name="chevron-back-outline" size={24} color={index === 0 ? theme.colors.textSecondary : theme.colors.primary} />
-                <Text style={[styles.navButtonText, index === 0 && styles.disabledButtonText]}>Previous</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={nextCard} 
-                disabled={index === dueCards.length - 1} 
-                style={[styles.navButton, index === dueCards.length - 1 && styles.disabledButton]}
-              >
-                <Text style={[styles.navButtonText, index === dueCards.length - 1 && styles.disabledButtonText]}>Next</Text>
-                <Ionicons 
-                  name="chevron-forward-outline" 
-                  size={24} 
-                  color={index === dueCards.length - 1 ? theme.colors.textSecondary : theme.colors.primary} 
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Extra padding to ensure navigation is above system bars */}
-          <View style={styles.bottomSpacer} />
-        </ScrollView>
-      </KeyboardAvoidingView>
+      {showFloatingTimer && revisionMode ? (
+        <View style={styles.floatingTimer}>
+          <Ionicons name="timer" size={16} color={theme.colors.primary} />
+          <Text style={styles.floatingTimerText}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text>
+        </View>
+      ) : null}
     </ScreenLayout>
   );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background, paddingHorizontal: 16, paddingTop: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', padding: 16 },
-  backButton: { flexDirection: 'row', alignItems: 'center' },
-  backText: { fontSize: 16, color: theme.colors.text, marginLeft: 8 },
-  content: { flex: 1 },
-  scrollContainer: { paddingBottom: 100 }, // Extra padding for safe scrolling
-  section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginBottom: 12 },
-  
-  // Loading State
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { fontSize: 16, color: theme.colors.text, marginTop: 16 },
-  
-  // Empty States
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 32, alignItems: 'center', margin: 16 },
-  emptyTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginTop: 16 },
-  emptySubtitle: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 8, marginBottom: 24 },
-  
-  // Complete States
-  completeCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 24, alignItems: 'center' },
-  completeTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginTop: 16 },
-  completeSubtitle: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 8, marginBottom: 24 },
-  
-  // Results
-  resultsCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 24 },
-  resultsHeader: { alignItems: 'center', marginBottom: 24 },
-  resultsTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginTop: 12 },
-  scoreContainer: { alignItems: 'center', marginBottom: 24 },
-  scoreText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary },
-  accuracyText: { fontSize: 18, color: theme.colors.text, marginTop: 8 },
-  statsContainer: { flexDirection: 'row', justifyContent: 'space-around' },
-  statItem: { alignItems: 'center', flex: 1 },
-  statValue: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text, marginTop: 8 },
-  statLabel: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 4 },
-  noStudyText: { fontSize: 16, color: theme.colors.textSecondary, textAlign: 'center', fontStyle: 'italic' },
-  
-  // Review Cards
-  reviewCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 16, marginBottom: 12 },
-  reviewHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  reviewQuestion: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginLeft: 8, flex: 1 },
-  reviewContent: { marginLeft: 28 },
-  reviewAnswer: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  incorrectAnswer: { fontSize: 14, color: '#F44336', marginLeft: 8, flex: 1 },
-  correctAnswer: { fontSize: 14, color: '#4CAF50', marginLeft: 8, flex: 1 },
-  timeoutAnswer: { fontSize: 14, color: '#FF9800', marginLeft: 8, flex: 1 },
-  
-  // Deck Info
-  deckInfoCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 16 },
-  deckInfoHeader: { flexDirection: 'row', alignItems: 'center' },
-  deckInfoText: { marginLeft: 12, flex: 1 },
-  deckTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
-  deckSubtitle: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 4 },
-  
-  // Session Progress
-  sessionCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 16 },
-  sessionProgress: { },
-  progressStats: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
-  progressStat: { alignItems: 'center', flex: 1 },
-  progressStatValue: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text },
-  progressStatLabel: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 4 },
-  cardProgress: { },
-  cardProgressText: { fontSize: 14, color: theme.colors.text, marginBottom: 8, textAlign: 'center' },
-  
-  // Deck Progress
-  deckProgressCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 16 },
-  deckProgressStats: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
-  deckProgressStat: { alignItems: 'center', flex: 1 },
-  deckProgressValue: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginTop: 4 },
-  deckProgressLabel: { fontSize: 12, color: theme.colors.textSecondary, marginTop: 4 },
-  overallProgressContainer: { alignItems: 'center' },
-  overallProgressText: { fontSize: 14, color: theme.colors.text, fontWeight: 'bold', marginTop: 8 },
-  
-  // Progress Bars
-  progressBarBg: { height: 8, backgroundColor: theme.colors.background, borderRadius: 4, flex: 1 },
-  progressBar: { height: 8, backgroundColor: theme.colors.primary, borderRadius: 4 },
-  
-  // Flashcard
-  flashcard: { backgroundColor: theme.colors.card, borderRadius: 12, overflow: 'hidden' },
-  cardTouchable: { padding: 24 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  cardLabel: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text, marginLeft: 8 },
-  cardText: { fontSize: 20, color: theme.colors.text, textAlign: 'center', marginBottom: 24, lineHeight: 28 },
-  
-  // Answer Section
-  answerSection: { },
-  answerLabel: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
-  answerInput: { backgroundColor: theme.colors.background, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 16, minHeight: 60, textAlignVertical: 'top', color: theme.colors.text },
-  checkButton: { backgroundColor: theme.colors.primary, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  checkButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-  
-  // Result Section
-  resultSection: { },
-  resultCard: { borderRadius: 8, padding: 16, alignItems: 'center', marginBottom: 16 },
-  correctResult: { backgroundColor: 'rgba(76, 175, 80, 0.1)' },
-  incorrectResult: { backgroundColor: 'rgba(244, 67, 54, 0.1)' },
-  resultText: { fontSize: 18, fontWeight: 'bold', marginTop: 8 },
-  correctText: { color: '#4CAF50' },
-  incorrectText: { color: '#F44336' },
-  correctAnswerText: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 8, textAlign: 'center' },
-  nextButton: { backgroundColor: theme.colors.primary, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  nextButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginRight: 8 },
-  
-  // Swipe Hint
-  swipeHint: { fontSize: 12, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 16, fontStyle: 'italic' },
-  
-  // Navigation
-  navRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  navButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.card, borderRadius: 8, padding: 12, flex: 0.45 },
-  navButtonText: { fontSize: 16, color: theme.colors.primary, fontWeight: 'bold' },
-  
-  // Buttons
-  primaryButton: { backgroundColor: theme.colors.primary, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  primaryButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-  secondaryButton: { backgroundColor: theme.colors.card, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  secondaryButtonText: { color: theme.colors.primary, fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-  accentButton: { backgroundColor: '#FF9800', borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  accentButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-  actionButtons: { },
-  
-  // Disabled States
-  disabledButton: { opacity: 0.5 },
-  disabledButtonText: { color: theme.colors.textSecondary },
-
-  // Bottom spacer to ensure content is above system navigation
-  bottomSpacer: { height: 50 },
-
-  // Revision Mode Timer
-  timerCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 16 },
-  timerHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  timerTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginLeft: 8 },
-  timerDisplay: { alignItems: 'center', marginBottom: 16 },
-  timerText: { fontSize: 36, fontWeight: 'bold', color: theme.colors.primary },
-  timerBarContainer: { height: 8, backgroundColor: theme.colors.background, borderRadius: 4, flex: 1 },
-  timerBarBg: { height: 8, backgroundColor: theme.colors.background, borderRadius: 4, flex: 1 },
-  timerBar: { height: 8, backgroundColor: theme.colors.primary, borderRadius: 4 },
-  timerWarning: { color: '#FF9800' },
-  timerDanger: { color: '#F44336' },
-
-  // Timer Setup
-  setupCard: { backgroundColor: theme.colors.card, borderRadius: 12, padding: 24 },
-  setupHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  setupTitle: { fontSize: 18, fontWeight: 'bold', color: theme.colors.text, marginLeft: 8 },
-  setupDescription: { fontSize: 14, color: theme.colors.textSecondary, textAlign: 'center', marginBottom: 16 },
-  timeLimitSection: { marginBottom: 16 },
-  timeLimitLabel: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
-  timeLimitOptions: { flexDirection: 'row', justifyContent: 'space-around' },
-  timeLimitOption: { padding: 8, borderWidth: 2, borderColor: theme.colors.primary, borderRadius: 8 },
-  timeLimitOptionText: { fontSize: 16, fontWeight: 'bold', color: theme.colors.text },
-  timeLimitOptionSelected: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  timeLimitOptionTextSelected: { color: theme.colors.background },
-  deckInfoPreview: { marginBottom: 16 },
-  previewLabel: { fontSize: 14, fontWeight: 'bold', color: theme.colors.text, marginBottom: 8 },
-  previewText: { fontSize: 16, color: theme.colors.textSecondary },
-  setupButtons: { flexDirection: 'row', justifyContent: 'space-around' },
-
-  // Revision Mode Buttons
-  revisionButton: { backgroundColor: theme.colors.primary, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginLeft: 8 },
-  revisionButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginLeft: 8 },
-  normalModeButton: { backgroundColor: theme.colors.primary, borderRadius: 8, padding: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  normalModeButtonText: { color: theme.colors.background, fontWeight: 'bold', fontSize: 16, marginRight: 8 },
-
-  // Timeout Result
-  timeoutResult: { backgroundColor: 'rgba(255, 152, 0, 0.1)' },
-  timeoutText: { color: '#FF9800' },
-  timeSpentText: { fontSize: 14, color: theme.colors.textSecondary, marginTop: 8, textAlign: 'center' },
-
-  // Timeout Session Label
-  timeoutSessionLabel: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginLeft: 8,
-  },
-
-  // Timer Warning Text
-  timerWarningText: {
-    fontSize: 12,
-    color: theme.colors.text,
-    fontWeight: 'bold',
-    marginTop: 8,
-  },
-
-  // Time Stats Container
-  timeStatsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 16,
-  },
-  timeStatItem: {
-    alignItems: 'center',
-  },
-  timeStatLabel: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  timeStatValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-
-  // Average Time Text
-  averageTimeText: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginTop: 8,
-  },
-
-  // Revision Mode Label
-  revisionModeLabel: {
-    fontSize: 14,
-    color: theme.colors.text,
-    marginLeft: 8,
-  },
-
-  // Floating Timer
-  floatingTimer: {
-    position: 'absolute',
-    top: 80, // Below the header
-    right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    borderRadius: 12,
-    padding: 12,
-    zIndex: 1000,
-    minWidth: 120,
-  },
-  floatingTimerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  floatingTimerText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: theme.colors.background,
-    marginLeft: 8,
-    marginRight: 8,
-  },
-  floatingTimerBar: {
-    height: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 2,
-    width: 60,
-    marginLeft: 8,
-  },
-  floatingTimerProgress: {
-    height: 4,
-    borderRadius: 2,
-  },
-  floatingTimerWarning: {
-    color: '#FF9800',
-  },
-  floatingTimerDanger: {
-    color: '#F44336',
-  },
-
-  // Time Type Toggle
-  timeTypeToggle: { 
-    flexDirection: 'row', 
-    backgroundColor: theme.colors.background,
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 16 
-  },
-  toggleOption: { 
-    flex: 1,
-    padding: 12, 
-    borderRadius: 6,
-    alignItems: 'center',
-    marginHorizontal: 2
-  },
-  toggleOptionActive: { 
-    backgroundColor: theme.colors.primary,
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 3
-  },
-  toggleOptionText: { 
-    fontSize: 14, 
-    fontWeight: 'bold', 
-    color: theme.colors.textSecondary 
-  },
-  toggleOptionTextActive: { 
-    color: theme.colors.background 
-  },
-
-  // Custom Time Input
-  customTimeContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center',
-    marginBottom: 16 
-  },
-  customTimeInput: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: theme.colors.background,
-    borderRadius: 8,
-    padding: 12,
-    marginHorizontal: 8
-  },
-  timeInput: { 
-    backgroundColor: 'transparent',
-    fontSize: 18, 
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    width: 50,
-    textAlign: 'center',
-    borderBottomWidth: 2,
-    borderBottomColor: theme.colors.primary,
-    paddingVertical: 4
-  },
-  timeLabel: { 
-    fontSize: 14, 
-    fontWeight: 'bold', 
-    color: theme.colors.textSecondary, 
-    marginLeft: 8
-  },
-  timeSeparator: { 
-    fontSize: 24, 
-    fontWeight: 'bold', 
-    color: theme.colors.primary
-  },
-  customTimeHint: { 
-    fontSize: 12, 
-    color: theme.colors.textSecondary, 
-    textAlign: 'center', 
-    marginTop: 8,
-    fontStyle: 'italic'
-  },
-}); 
+  content: { paddingBottom: 36 },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  centerStateText: { fontFamily: 'Poppins_400Regular', fontSize: 13, color: theme.colors.textSecondary },
+  emptyTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: theme.colors.text },
+  progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progressLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.textSecondary },
+  progressPercent: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
+  progressTrack: { height: 7, borderRadius: 99, backgroundColor: theme.colors.surfaceMuted, overflow: 'hidden', marginTop: 8, marginBottom: 18 },
+  progressFill: { height: '100%', borderRadius: 99, backgroundColor: theme.colors.primary },
+  revisionLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, backgroundColor: theme.colors.primarySoft, marginBottom: 14 },
+  revisionLinkText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
+  timerCard: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 16, backgroundColor: theme.colors.primarySoft, paddingHorizontal: 14, marginBottom: 14 },
+  timerCopy: { flex: 1 },
+  timerLabel: { fontFamily: 'Poppins_400Regular', fontSize: 10, color: theme.colors.textSecondary },
+  timerValue: { fontFamily: 'Poppins_700Bold', fontSize: 18, color: theme.colors.text },
+  flashcard: { minHeight: 310, borderRadius: 26, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, shadowColor: '#111827', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 18, elevation: 2 },
+  flashcardTouch: { minHeight: 310, alignItems: 'center', justifyContent: 'center', padding: 28 },
+  faceLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, letterSpacing: 1, color: theme.colors.primary, marginBottom: 14 },
+  faceText: { fontFamily: 'Poppins_600SemiBold', fontSize: 24, lineHeight: 34, color: theme.colors.text, textAlign: 'center' },
+  flipHint: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 26 },
+  flipHintText: { fontFamily: 'Poppins_400Regular', fontSize: 11, color: theme.colors.textMuted },
+  answerActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  againButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: `${theme.colors.error}10` },
+  againText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.error },
+  knowButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: theme.colors.primary },
+  knowText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.primaryText },
+  typeAnswerCard: { marginTop: 14, borderRadius: 20, padding: 14, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
+  answerLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.textSecondary, marginBottom: 7 },
+  answerInput: { minHeight: 48, borderRadius: 14, backgroundColor: theme.colors.input, paddingHorizontal: 14, fontFamily: 'Poppins_400Regular', fontSize: 13, color: theme.colors.text },
+  checkButton: { alignSelf: 'flex-end', marginTop: 10, minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: theme.colors.primarySoft },
+  checkButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
+  answerFeedback: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, marginTop: 8 },
+  navigationRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginTop: 14 },
+  navButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12 },
+  navButtonDisabled: { opacity: 0.5 },
+  navButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.text },
+  completeCard: { alignItems: 'center', borderRadius: 26, padding: 30, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
+  completeIcon: { width: 62, height: 62, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.accentSoft },
+  completeTitle: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: theme.colors.text, marginTop: 16 },
+  completeText: { fontFamily: 'Poppins_400Regular', fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 6 },
+  completeStats: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 22 },
+  completeStat: { flex: 1, borderRadius: 16, backgroundColor: theme.colors.surfaceMuted, padding: 14, alignItems: 'center' },
+  completeStatValue: { fontFamily: 'Poppins_700Bold', fontSize: 20, color: theme.colors.text },
+  completeStatLabel: { fontFamily: 'Poppins_400Regular', fontSize: 10, color: theme.colors.textSecondary, marginTop: 2 },
+  doneButton: { marginTop: 20, minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, borderRadius: 15, backgroundColor: theme.colors.primary },
+  doneButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.primaryText },
+  timerSetupCard: { marginTop: 14, borderRadius: 20, padding: 16, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
+  timerSetupTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: theme.colors.text },
+  timerSetupText: { fontFamily: 'Poppins_400Regular', fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary, marginTop: 3 },
+  timerPresetRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  timerPreset: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: theme.colors.surfaceMuted },
+  timerPresetActive: { backgroundColor: theme.colors.primary },
+  timerPresetText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.textSecondary },
+  timerPresetTextActive: { color: theme.colors.primaryText },
+  customTimeToggle: { alignSelf: 'flex-start', marginTop: 12 },
+  customTimeToggleText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.primary },
+  customTimeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
+  customTimeInput: { flex: 1, minHeight: 44, borderRadius: 13, backgroundColor: theme.colors.input, paddingHorizontal: 12, fontFamily: 'Poppins_400Regular', fontSize: 12, color: theme.colors.text },
+  timerSetupActions: { flexDirection: 'row', gap: 8, marginTop: 16 },
+  timerCancelButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: theme.colors.surfaceMuted },
+  timerCancelText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.textSecondary },
+  timerStartButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: theme.colors.primary },
+  timerStartText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primaryText },
+  floatingTimer: { position: 'absolute', right: 14, top: 14, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
+  floatingTimerText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.primary },
+});
