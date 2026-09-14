@@ -1,513 +1,231 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View,
+  ActivityIndicator,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Dimensions,
-  Alert,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
+import ScreenLayout from '../../components/ScreenLayout';
+import {
+  AppIcon,
+  Card,
+  IconButton,
+  MetricCard,
+  ProgressBar,
+  ScreenIntro,
+  SectionHeader,
+} from '../../components/ui';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
-import { AnalyticsService } from '../../utils/analyticsService';
-import ScreenLayout from '../../components/ScreenLayout';
+import { loadProgressWorkspace } from '../../utils/progressRepository';
+import { layout, radius, spacing, typography } from '../../theme/designSystem';
 
-const { width } = Dimensions.get('window');
+const RANGES = [7, 30, 90];
+
+function formatMinutes(minutes) {
+  const value = Math.max(0, Number(minutes || 0));
+  if (value < 60) return `${value}m`;
+  const hours = Math.floor(value / 60);
+  const remainder = value % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+}
 
 export default function AnalyticsScreen({ navigation }) {
   const { theme } = useTheme();
   const { currentUser } = useUser();
-  const [analytics, setAnalytics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [dateRange, setDateRange] = useState(30);
-  
   const styles = getStyles(theme);
+  const [range, setRange] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [progress, setProgress] = useState(null);
 
-  useEffect(() => {
-    loadAnalytics();
-  }, [dateRange, currentUser]);
-
-  const loadAnalytics = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      if (!currentUser) {
-        setAnalytics(null);
-        setLoading(false);
-        return;
-      }
-      const data = await AnalyticsService.getAnalyticsSummary(dateRange, currentUser);
-      setAnalytics(data);
+      setProgress(await loadProgressWorkspace(currentUser, range));
     } catch (error) {
-      console.error('Error loading analytics:', error);
+      console.error('Unable to load Progress workspace:', error);
+      setProgress(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser?.email, range]);
 
-  const handleResetCharts = () => {
-    Alert.alert(
-      'Reset Analytics Data',
-      'This will permanently delete all your analytics data including study sessions, planner events, and progress tracking. This action cannot be undone.\n\nAre you sure you want to continue?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              const success = await AnalyticsService.clearAnalyticsData();
-              if (success) {
-                Alert.alert(
-                  'Analytics Reset',
-                  'All analytics data has been successfully cleared. Charts will now show empty data.',
-                  [{ text: 'OK', onPress: loadAnalytics }]
-                );
-              } else {
-                Alert.alert(
-                  'Reset Failed',
-                  'Failed to reset analytics data. Please try again.',
-                  [{ text: 'OK' }]
-                );
-              }
-            } catch (error) {
-              console.error('Error resetting analytics:', error);
-              Alert.alert(
-                'Reset Error',
-                'An error occurred while resetting analytics data.',
-                [{ text: 'OK' }]
-              );
-            } finally {
-              setLoading(false);
-            }
-          },
-        },
-      ]
-    );
-  };
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const formatTime = (minutes) => {
-    if (minutes < 60) return `${minutes}m`;
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins}m`;
-  };
-
-  const StatCard = ({ title, value, subtitle, icon, color = theme.colors.primary }) => (
-    <View style={[styles.statCard, { borderLeftColor: color }]}>
-      <View style={styles.statHeader}>
-        <Ionicons name={icon} size={24} color={color} />
-        <Text style={styles.statTitle}>{title}</Text>
-      </View>
-      <Text style={styles.statValue}>{value}</Text>
-      {subtitle && <Text style={styles.statSubtitle}>{subtitle}</Text>}
-    </View>
-  );
-
-  const SectionHeader = ({ title, subtitle }) => (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
-    </View>
-  );
-
-  const DateRangeSelector = () => (
-    <View style={styles.dateRangeContainer}>
-      <Text style={styles.dateRangeLabel}>Time Period:</Text>
-      <View style={styles.dateRangeButtons}>
-        {[7, 30, 90].map((days) => (
-          <TouchableOpacity
-            key={days}
-            style={[
-              styles.dateRangeButton,
-              dateRange === days && styles.dateRangeButtonActive
-            ]}
-            onPress={() => setDateRange(days)}
-          >
-            <Text style={[
-              styles.dateRangeButtonText,
-              dateRange === days && styles.dateRangeButtonTextActive
-            ]}>
-              {days}d
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
+  const maxDailyMinutes = useMemo(() => {
+    if (!progress?.recentDays?.length) return 1;
+    return Math.max(1, ...progress.recentDays.map((day) => day.minutes));
+  }, [progress]);
 
   if (loading) {
-    return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Analytics"
-        headerIcon="analytics-outline"
-        navigation={navigation}
-      >
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading analytics...</Text>
-        </View>
-      </ScreenLayout>
-    );
-  }
-
-  if (!analytics) {
-    return (
-      <ScreenLayout
-        showHeader={true}
-        headerTitle="Analytics"
-        headerIcon="analytics-outline"
-        navigation={navigation}
-      >
-        <View style={styles.emptyContainer}>
-          <Ionicons name="analytics-outline" size={64} color={theme.colors.textSecondary} />
-          <Text style={styles.emptyTitle}>No Data Available</Text>
-          <Text style={styles.emptySubtitle}>
-            Start using the daily planner and study tracker to see your analytics here.
-          </Text>
-        </View>
-      </ScreenLayout>
-    );
+    return <ScreenLayout><View style={styles.loadingState}><ActivityIndicator size="large" color={theme.colors.primary} /><Text style={styles.loadingText}>Preparing Progress…</Text></View></ScreenLayout>;
   }
 
   return (
-    <ScreenLayout
-      showHeader={true}
-      headerTitle="Analytics"
-      headerIcon="analytics-outline"
-      scrollable={true}
-      headerRight={
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={loadAnalytics} style={styles.headerButton}>
-            <Ionicons name="refresh" size={20} color={theme.colors.text} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={handleResetCharts} style={styles.headerButton}>
-            <Ionicons name="trash-outline" size={20} color="#FF4444" />
-          </TouchableOpacity>
-        </View>
-      }
-      navigation={navigation}
-    >
-        <DateRangeSelector />
+    <ScreenLayout scrollable horizontalPadding={false} verticalPadding={false} contentContainerStyle={styles.content} navigation={navigation}>
+      <ScreenIntro
+        eyebrow="Progress"
+        title="See the work add up"
+        subtitle="Study time, consistency, plan completion and learning progress in one place."
+        right={<IconButton icon="refresh" onPress={load} accessibilityLabel="Refresh progress" />}
+      />
 
-        {/* Overview Stats */}
-        <SectionHeader 
-          title="Overview" 
-          subtitle={`Last ${dateRange} days`}
-        />
-        
-        <View style={styles.statsGrid}>
-          <StatCard
-            title="Total Activities"
-            value={analytics.combined.totalActivities}
-            subtitle="Sessions & Events"
-            icon="calendar-outline"
-            color="#4CAF50"
-          />
-          <StatCard
-            title="Total Time"
-            value={formatTime(analytics.combined.totalTime)}
-            subtitle="Planned & Studied"
-            icon="time-outline"
-            color="#2196F3"
-          />
-        </View>
+      <View style={styles.rangeRow}>
+        {RANGES.map((days) => {
+          const active = range === days;
+          return <TouchableOpacity key={days} style={[styles.rangeChip, active && styles.rangeChipActive]} onPress={() => setRange(days)}><Text style={[styles.rangeText, active && styles.rangeTextActive]}>{days} days</Text></TouchableOpacity>;
+        })}
+      </View>
 
-        {/* Study Tracker Analytics */}
-        <SectionHeader 
-          title="Study Tracker" 
-          subtitle="Learning progress"
-        />
-        
-        <View style={styles.statsGrid}>
-          <StatCard
-            title="Study Sessions"
-            value={analytics.study.totalSessions}
-            subtitle="Total completed"
-            icon="book-outline"
-            color="#FF9800"
-          />
-          <StatCard
-            title="Study Time"
-            value={formatTime(analytics.study.totalStudyTime)}
-            subtitle="Time invested"
-            icon="timer-outline"
-            color="#9C27B0"
-          />
-          <StatCard
-            title="Average Session"
-            value={formatTime(analytics.study.averageSessionTime)}
-            subtitle="Per session"
-            icon="trending-up-outline"
-            color="#00BCD4"
-          />
-          <StatCard
-            title="Study Streak"
-            value={`${analytics.study.streakDays} days`}
-            subtitle="Current streak"
-            icon="flame-outline"
-            color="#FF5722"
-          />
-        </View>
-
-        {/* Subject Breakdown */}
-        {Object.keys(analytics.study.subjectBreakdown).length > 0 && (
-          <>
-            <SectionHeader 
-              title="Subject Breakdown" 
-              subtitle="Time distribution"
-            />
-            
-            <View style={styles.subjectContainer}>
-              {Object.entries(analytics.study.subjectBreakdown)
-                .sort(([,a], [,b]) => b.totalTime - a.totalTime)
-                .map(([subject, data]) => (
-                  <View key={subject} style={styles.subjectItem}>
-                    <View style={styles.subjectInfo}>
-                      <Text style={styles.subjectName}>{subject}</Text>
-                      <Text style={styles.subjectStats}>
-                        {data.count} sessions • {formatTime(data.totalTime)}
-                      </Text>
-                    </View>
-                    <View style={styles.subjectProgress}>
-                      <View 
-                        style={[
-                          styles.subjectProgressBar,
-                          { 
-                            width: `${Math.min(100, (data.totalTime / analytics.study.totalStudyTime) * 100)}%` 
-                          }
-                        ]} 
-                      />
-                    </View>
-                  </View>
-                ))}
+      {!progress ? (
+        <Card style={styles.emptyCard}>
+          <AppIcon name="stats-chart-outline" size={28} color={theme.colors.primary} />
+          <Text style={styles.emptyTitle}>No progress data yet</Text>
+          <Text style={styles.emptyText}>Complete a focus session or mark planned work done and your progress will appear here.</Text>
+        </Card>
+      ) : (
+        <>
+          <Card style={styles.heroCard}>
+            <View style={styles.heroTopRow}>
+              <AppIcon name="timer-outline" size={24} color={theme.colors.primary} />
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroEyebrow}>STUDY TIME</Text>
+                <Text style={styles.heroValue}>{formatMinutes(progress.totalStudyMinutes)}</Text>
+                <Text style={styles.heroHint}>Across {progress.sessionCount} completed focus session{progress.sessionCount === 1 ? '' : 's'} in the selected period.</Text>
+              </View>
             </View>
-          </>
-        )}
+            <View style={styles.heroMetrics}>
+              <HeroMetric value={progress.activeDays} label="Active days" styles={styles} />
+              <HeroMetric value={`${progress.streak}d`} label="Current streak" styles={styles} />
+              <HeroMetric value={`${progress.averageSessionMinutes}m`} label="Avg session" styles={styles} />
+            </View>
+          </Card>
 
-        {/* Daily Planner Analytics */}
-        <SectionHeader 
-          title="Daily Planner" 
-          subtitle="Planning efficiency"
-        />
-        
-        <View style={styles.statsGrid}>
-          <StatCard
-            title="Planned Events"
-            value={analytics.planner.totalEvents}
-            subtitle="Total scheduled"
-            icon="calendar-outline"
-            color="#3F51B5"
-          />
-          <StatCard
-            title="Completed Events"
-            value={analytics.planner.completedEvents}
-            subtitle="Successfully done"
-            icon="checkmark-circle-outline"
-            color="#4CAF50"
-          />
-          <StatCard
-            title="Completion Rate"
-            value={`${analytics.planner.completionRate}%`}
-            subtitle="Success rate"
-            icon="pie-chart-outline"
-            color="#FF9800"
-          />
-          <StatCard
-            title="Planned Time"
-            value={formatTime(analytics.planner.totalPlannedTime)}
-            subtitle="Total scheduled"
-            icon="time-outline"
-            color="#E91E63"
-          />
-        </View>
+          <SectionHeader title="Recent study rhythm" subtitle="Your last seven calendar days." style={styles.sectionSpace} />
+          <Card style={styles.chartCard}>
+            <View style={styles.chartArea}>
+              {progress.recentDays.map((day) => {
+                const ratio = day.minutes / maxDailyMinutes;
+                const height = day.minutes > 0 ? Math.max(14, Math.round(112 * ratio)) : 8;
+                return (
+                  <View key={day.key} style={styles.barColumn}>
+                    <Text style={styles.barValue}>{day.minutes || ''}</Text>
+                    <View style={styles.barTrack}><View style={[styles.barFill, { height }]} /></View>
+                    <Text style={styles.barLabel}>{day.label}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
 
-        <View style={styles.bottomPadding} />
+          <View style={styles.metricGrid}>
+            <MetricCard icon="checkmark-circle-outline" label="Plan completion" value={`${progress.tasks.completionRate}%`} color={theme.colors.accent} style={styles.metricCard} />
+            <MetricCard icon="layers-outline" label="Flashcard mastery" value={`${progress.learn.masteryRate}%`} color={theme.colors.primary} style={styles.metricCard} />
+          </View>
+          <View style={styles.metricHints}>
+            <Text style={styles.metricHint}>{progress.tasks.completed} of {progress.tasks.total} tasks completed</Text>
+            <Text style={styles.metricHint}>{progress.learn.mastered} of {progress.learn.cards} cards mastered</Text>
+          </View>
+
+          <SectionHeader title="By subject" subtitle="Where your study time has gone." style={styles.sectionSpace} />
+          {progress.subjectBreakdown.length === 0 ? (
+            <Card><Text style={styles.subjectEmptyTitle}>No subject history in this period</Text><Text style={styles.subjectEmptyText}>Study a subject in Focus to build a useful breakdown here.</Text></Card>
+          ) : (
+            <Card style={styles.subjectCard}>
+              {progress.subjectBreakdown.map((subject, index) => {
+                const ratio = progress.totalStudyMinutes > 0 ? Math.min(1, subject.minutes / progress.totalStudyMinutes) : 0;
+                return (
+                  <View key={subject.name} style={[styles.subjectRow, index < progress.subjectBreakdown.length - 1 && styles.divider]}>
+                    <View style={styles.subjectTopRow}>
+                      <AppIcon name="book-outline" size={19} color={theme.colors.primary} />
+                      <View style={styles.subjectCopy}><Text style={styles.subjectName}>{subject.name}</Text><Text style={styles.subjectMinutes}>{formatMinutes(subject.minutes)}</Text></View>
+                      <Text style={styles.subjectPercent}>{Math.round(ratio * 100)}%</Text>
+                    </View>
+                    <ProgressBar progress={ratio} style={styles.subjectProgress} />
+                  </View>
+                );
+              })}
+            </Card>
+          )}
+
+          <SectionHeader title="Learning system" subtitle="A quick view beyond timer minutes." style={styles.sectionSpace} />
+          <Card style={styles.systemCard}>
+            <SystemRow icon="calendar-outline" title="Plan" value={`${progress.tasks.completed}/${progress.tasks.total}`} hint="completed tasks" theme={theme} styles={styles} onPress={() => navigation.navigate('Planner')} />
+            <SystemRow icon="timer-outline" title="Focus" value={formatMinutes(progress.totalStudyMinutes)} hint={`${progress.sessionCount} sessions`} theme={theme} styles={styles} onPress={() => navigation.navigate('Tracker')} />
+            <SystemRow icon="layers-outline" title="Learn" value={`${progress.learn.decks}`} hint={`${progress.learn.cards} cards across decks`} theme={theme} styles={styles} onPress={() => navigation.navigate('Flashcards')} last />
+          </Card>
+        </>
+      )}
     </ScreenLayout>
   );
 }
 
+function HeroMetric({ value, label, styles }) {
+  return <View style={styles.heroMetric}><Text style={styles.heroMetricValue}>{value}</Text><Text style={styles.heroMetricLabel}>{label}</Text></View>;
+}
+
+function SystemRow({ icon, title, value, hint, theme, styles, onPress, last }) {
+  return (
+    <TouchableOpacity style={[styles.systemRow, !last && styles.divider]} onPress={onPress}>
+      <AppIcon name={icon} size={20} color={theme.colors.primary} />
+      <View style={styles.systemCopy}><Text style={styles.systemTitle}>{title}</Text><Text style={styles.systemHint}>{hint}</Text></View>
+      <Text style={styles.systemValue}>{value}</Text>
+      <AppIcon name="chevron-forward" size={17} color={theme.colors.textMuted} />
+    </TouchableOpacity>
+  );
+}
+
 const getStyles = (theme) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  dateRangeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 16,
-  },
-  dateRangeLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.text,
-    marginRight: 12,
-  },
-  dateRangeButtons: {
-    flexDirection: 'row',
-  },
-  dateRangeButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: theme.colors.surface,
-    marginRight: 8,
-  },
-  dateRangeButtonActive: {
-    backgroundColor: theme.colors.primary,
-  },
-  dateRangeButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.colors.text,
-  },
-  dateRangeButtonTextActive: {
-    color: '#fff',
-  },
-  sectionHeader: {
-    marginTop: 24,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  sectionSubtitle: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -6,
-  },
-  statCard: {
-    width: (width - 52) / 2,
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    margin: 6,
-    borderLeftWidth: 4,
-  },
-  statHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  statTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: theme.colors.textSecondary,
-    marginLeft: 8,
-    flex: 1,
-  },
-  statValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  statSubtitle: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  subjectContainer: {
-    backgroundColor: theme.colors.surface,
-    borderRadius: 12,
-    padding: 16,
-  },
-  subjectItem: {
-    marginBottom: 16,
-  },
-  subjectInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  subjectName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: theme.colors.text,
-  },
-  subjectStats: {
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-  },
-  subjectProgress: {
-    height: 6,
-    backgroundColor: theme.colors.border,
-    borderRadius: 3,
-  },
-  subjectProgressBar: {
-    height: 6,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 3,
-  },
-  bottomPadding: {
-    height: 32,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerButton: {
-    padding: 8,
-  },
-}); 
+  content: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
+  loadingState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  loadingText: { fontFamily: typography.regular, fontSize: 13, color: theme.colors.textSecondary },
+  rangeRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.xl, marginBottom: spacing.lg },
+  rangeChip: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, borderRadius: radius.pill, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  rangeChipActive: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  rangeText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary },
+  rangeTextActive: { color: theme.colors.textInverse },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyTitle: { fontFamily: typography.semibold, fontSize: 17, color: theme.colors.text, marginTop: spacing.md },
+  emptyText: { fontFamily: typography.regular, fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary, textAlign: 'center', marginTop: spacing.xs },
+  heroCard: { borderRadius: radius.xl },
+  heroTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  heroCopy: { flex: 1 },
+  heroEyebrow: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 0.8, color: theme.colors.primary },
+  heroValue: { fontFamily: typography.bold, fontSize: 30, lineHeight: 36, color: theme.colors.text, marginTop: 2 },
+  heroHint: { fontFamily: typography.regular, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary, marginTop: 2 },
+  heroMetrics: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  heroMetric: { flex: 1, paddingTop: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.separator },
+  heroMetricValue: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text },
+  heroMetricLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
+  sectionSpace: { marginTop: spacing.xxl },
+  chartCard: { height: 196 },
+  chartArea: { flex: 1, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: spacing.xs },
+  barColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  barValue: { height: 18, fontFamily: typography.regular, fontSize: 9, color: theme.colors.textMuted },
+  barTrack: { height: 116, width: '58%', borderRadius: radius.pill, backgroundColor: theme.colors.surfaceMuted, justifyContent: 'flex-end', overflow: 'hidden' },
+  barFill: { width: '100%', minHeight: 8, borderRadius: radius.pill, backgroundColor: theme.colors.primary },
+  barLabel: { fontFamily: typography.semibold, fontSize: 10, color: theme.colors.textSecondary, marginTop: spacing.xs },
+  metricGrid: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xl },
+  metricCard: { minHeight: 118 },
+  metricHints: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  metricHint: { flex: 1, fontFamily: typography.regular, fontSize: 10, lineHeight: 15, color: theme.colors.textMuted },
+  subjectEmptyTitle: { fontFamily: typography.semibold, fontSize: 14, color: theme.colors.text },
+  subjectEmptyText: { fontFamily: typography.regular, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary, marginTop: 2 },
+  subjectCard: { padding: 0, overflow: 'hidden' },
+  subjectRow: { padding: spacing.md },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.separator },
+  subjectTopRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  subjectCopy: { flex: 1 },
+  subjectName: { fontFamily: typography.semibold, fontSize: 13, color: theme.colors.text },
+  subjectMinutes: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
+  subjectPercent: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.primary },
+  subjectProgress: { marginTop: spacing.sm },
+  systemCard: { padding: 0, overflow: 'hidden' },
+  systemRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
+  systemCopy: { flex: 1 },
+  systemTitle: { fontFamily: typography.semibold, fontSize: 13, color: theme.colors.text },
+  systemHint: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
+  systemValue: { fontFamily: typography.bold, fontSize: 14, color: theme.colors.text },
+});

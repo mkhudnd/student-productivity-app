@@ -1,0 +1,531 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
+import ScreenLayout from '../components/ScreenLayout';
+import {
+  AppIcon,
+  Card,
+  IconButton,
+  PrimaryButton,
+  SectionHeader,
+  ScreenIntro,
+  SecondaryButton,
+} from '../components/ui';
+import { useTheme } from '../context/ThemeContext';
+import { useUser } from '../context/UserContext';
+import {
+  deletePlanTask,
+  deleteStudyPlan,
+  loadPlanWorkspace,
+  localDateKey,
+  savePlanTask,
+  saveStudyPlan,
+  togglePlanTask,
+} from '../utils/planRepository';
+import { layout, radius, spacing, typography } from '../theme/designSystem';
+
+const FILTERS = [
+  { id: 'agenda', label: 'Agenda' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'study', label: 'Study' },
+];
+
+const TYPES = [
+  { id: 'task', label: 'Task', icon: 'checkmark-circle-outline' },
+  { id: 'study', label: 'Study', icon: 'timer-outline' },
+  { id: 'assignment', label: 'Assignment', icon: 'document-text-outline' },
+];
+
+function addDays(date, amount) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function fromDateKey(key) {
+  return new Date(`${key}T00:00:00`);
+}
+
+function formatDateHeading(key) {
+  const date = fromDateKey(key);
+  const today = localDateKey();
+  const tomorrow = localDateKey(addDays(new Date(), 1));
+  if (key === today) return 'Today';
+  if (key === tomorrow) return 'Tomorrow';
+  return new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
+}
+
+function shortDay(date) {
+  return {
+    key: localDateKey(date),
+    day: new Intl.DateTimeFormat('en', { weekday: 'short' }).format(date),
+    number: date.getDate(),
+  };
+}
+
+function timeToDate(value, fallbackHour = 9) {
+  const date = new Date();
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value || '');
+  if (match) date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  else date.setHours(fallbackHour, 0, 0, 0);
+  return date;
+}
+
+function dateToTime(date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function defaultTimes(dateKey) {
+  const now = new Date();
+  const start = new Date();
+  start.setHours(dateKey === localDateKey() ? Math.min(22, now.getHours() + 1) : 9, 0, 0, 0);
+  const end = new Date(start);
+  end.setHours(Math.min(23, start.getHours() + 1));
+  return { startTime: dateToTime(start), endTime: dateToTime(end) };
+}
+
+function minutesBetween(start, end) {
+  return Math.round((timeToDate(end).getTime() - timeToDate(start).getTime()) / 60000);
+}
+
+function itemStart(item) {
+  return item.time || item.startTime || '';
+}
+
+function isOverdue(item, selectedDate) {
+  if (item.completed || selectedDate !== localDateKey() || !itemStart(item)) return false;
+  const [hour, minute] = itemStart(item).split(':').map(Number);
+  const now = new Date();
+  return hour * 60 + minute < now.getHours() * 60 + now.getMinutes();
+}
+
+function newForm(dateKey, type = 'task') {
+  const times = defaultTimes(dateKey);
+  return {
+    id: null,
+    sourceType: type === 'study' ? 'study' : 'task',
+    type,
+    title: '',
+    subjectId: '',
+    topic: '',
+    startTime: times.startTime,
+    endTime: times.endTime,
+    priority: 'medium',
+  };
+}
+
+function formFromItem(item) {
+  const study = item.sourceType === 'study';
+  return {
+    id: item.id,
+    sourceType: item.sourceType,
+    type: study ? 'study' : item.itemType || 'task',
+    title: study ? '' : item.title || '',
+    subjectId: study ? item.subjectId || '' : '',
+    topic: study ? item.topic || '' : '',
+    startTime: itemStart(item) || '09:00',
+    endTime: item.endTime || '10:00',
+    priority: item.priority || 'medium',
+  };
+}
+
+export default function PlanScreen({ navigation }) {
+  const { theme } = useTheme();
+  const { currentUser } = useUser();
+  const styles = getStyles(theme);
+  const [workspace, setWorkspace] = useState({ tasks: [], studyPlans: [], subjects: [] });
+  const [selectedDate, setSelectedDate] = useState(localDateKey());
+  const [filter, setFilter] = useState('agenda');
+  const [loading, setLoading] = useState(true);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState(() => newForm(localDateKey()));
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setWorkspace(await loadPlanWorkspace(currentUser));
+    } catch (error) {
+      console.error('Unable to load Plan workspace:', error);
+      Alert.alert('Plan unavailable', 'Your planning data could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser?.email]);
+
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    load();
+  }, [load]));
+
+  const days = useMemo(() => {
+    const start = new Date();
+    return Array.from({ length: 14 }, (_, index) => shortDay(addDays(start, index)));
+  }, []);
+
+  const items = useMemo(() => {
+    const tasks = workspace.tasks.filter((task) => task.date === selectedDate).map((task) => ({ ...task, sourceType: 'task' }));
+    const study = workspace.studyPlans.filter((session) => session.date === selectedDate).map((session) => ({ ...session, sourceType: 'study' }));
+    const combined = filter === 'tasks' ? tasks : filter === 'study' ? study : [...tasks, ...study];
+    return combined.sort((a, b) => (itemStart(a) || '99:99').localeCompare(itemStart(b) || '99:99'));
+  }, [workspace, selectedDate, filter]);
+
+  const summary = useMemo(() => {
+    const dayTasks = workspace.tasks.filter((task) => task.date === selectedDate);
+    const dayStudy = workspace.studyPlans.filter((session) => session.date === selectedDate);
+    return {
+      total: dayTasks.length + dayStudy.length,
+      studyMinutes: dayStudy.reduce((total, item) => total + Number(item.plannedDuration || 0), 0),
+      completed: dayTasks.filter((task) => task.completed).length,
+      overdue: dayTasks.filter((task) => isOverdue(task, selectedDate)).length,
+    };
+  }, [workspace, selectedDate]);
+
+  const openCreate = (type = 'task') => {
+    setForm(newForm(selectedDate, type));
+    setModalVisible(true);
+  };
+
+  const openEdit = (item) => {
+    setForm(formFromItem(item));
+    setModalVisible(true);
+  };
+
+  const save = async () => {
+    const duration = minutesBetween(form.startTime, form.endTime);
+    if (duration <= 0) return Alert.alert('Check the time', 'End time must be later than start time.');
+    if (form.type === 'study' && !form.subjectId) return Alert.alert('Choose a subject', 'Select what this study block is for.');
+    if (form.type !== 'study' && !form.title.trim()) return Alert.alert('Add a title', 'Give this item a clear title.');
+
+    setSaving(true);
+    try {
+      if (form.type === 'study') {
+        await saveStudyPlan(currentUser, {
+          id: form.id,
+          date: selectedDate,
+          subjectId: form.subjectId,
+          topic: form.topic,
+          startTime: form.startTime,
+          endTime: form.endTime,
+          plannedDuration: duration,
+        });
+      } else {
+        await savePlanTask(currentUser, {
+          id: form.id,
+          title: form.title,
+          date: selectedDate,
+          time: form.startTime,
+          endTime: form.endTime,
+          itemType: form.type,
+          category: form.type === 'assignment' ? 'Assignments' : 'Study',
+          priority: form.priority,
+        });
+      }
+      setModalVisible(false);
+      await load();
+    } catch (error) {
+      Alert.alert('Could not save', error.message || 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleTask = async (item) => {
+    await togglePlanTask(currentUser, item.id);
+    await load();
+  };
+
+  const removeCurrent = () => {
+    if (!form.id) return;
+    Alert.alert('Remove from plan?', 'This removes the item from your plan.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          if (form.sourceType === 'study') await deleteStudyPlan(currentUser, form.id);
+          else await deletePlanTask(currentUser, form.id);
+          setModalVisible(false);
+          await load();
+        },
+      },
+    ]);
+  };
+
+  const startStudy = (item) => navigation.navigate('Tracker', {
+    plannedSessionId: item.id,
+    subjectId: item.subjectId,
+    topic: item.topic || null,
+  });
+
+  const selectedSubject = workspace.subjects.find((subject) => subject.id === form.subjectId);
+
+  return (
+    <>
+      <ScreenLayout scrollable horizontalPadding={false} verticalPadding={false} contentContainerStyle={styles.content}>
+        <ScreenIntro
+          eyebrow="Plan"
+          title="Shape your study week"
+          subtitle="Put study, assignments and tasks into one realistic agenda."
+          right={<IconButton icon="add" onPress={() => openCreate('task')} accessibilityLabel="Add plan item" />}
+        />
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
+          {days.map((day) => {
+            const selected = day.key === selectedDate;
+            return (
+              <TouchableOpacity key={day.key} style={[styles.dateChip, selected && styles.dateChipSelected]} onPress={() => setSelectedDate(day.key)}>
+                <Text style={[styles.dateDay, selected && styles.dateDaySelected]}>{day.day}</Text>
+                <Text style={[styles.dateNumber, selected && styles.dateNumberSelected]}>{day.number}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Card style={styles.dayCard}>
+          <View style={styles.dayTop}>
+            <View style={styles.dayCopy}>
+              <Text style={styles.dayEyebrow}>{formatDateHeading(selectedDate).toUpperCase()}</Text>
+              <Text style={styles.dayTitle}>{summary.total} planned item{summary.total === 1 ? '' : 's'}</Text>
+            </View>
+            <Text style={styles.studyMinutes}>{summary.studyMinutes}m study</Text>
+          </View>
+          <View style={styles.statsRow}>
+            <MiniStat label="Completed" value={summary.completed} styles={styles} />
+            <MiniStat label="Study" value={`${summary.studyMinutes}m`} styles={styles} />
+            <MiniStat label="Overdue" value={summary.overdue} danger={summary.overdue > 0} styles={styles} />
+          </View>
+          <View style={styles.quickAddRow}>
+            {TYPES.map((type) => (
+              <TouchableOpacity key={type.id} style={styles.quickAdd} onPress={() => openCreate(type.id)}>
+                <AppIcon name={type.icon} size={18} color={theme.colors.primary} />
+                <Text style={styles.quickAddText}>{type.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Card>
+
+        <View style={styles.filterRow}>
+          {FILTERS.map((item) => {
+            const selected = filter === item.id;
+            return (
+              <TouchableOpacity key={item.id} style={[styles.filterChip, selected && styles.filterChipSelected]} onPress={() => setFilter(item.id)}>
+                <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{item.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <SectionHeader title="Agenda" subtitle="Tap an item to edit it." />
+
+        {loading ? (
+          <Card style={styles.loadingCard}><ActivityIndicator color={theme.colors.primary} /><Text style={styles.loadingText}>Loading your plan…</Text></Card>
+        ) : items.length === 0 ? (
+          <Card style={styles.emptyCard}>
+            <AppIcon name="calendar-clear-outline" size={26} color={theme.colors.primary} />
+            <Text style={styles.emptyTitle}>Nothing planned here</Text>
+            <Text style={styles.emptyText}>Add a study block, task or assignment and give this day some structure.</Text>
+            <SecondaryButton label="Plan study time" icon="timer-outline" onPress={() => openCreate('study')} style={styles.emptyButton} />
+          </Card>
+        ) : (
+          <Card style={styles.agendaCard}>
+            {items.map((item, index) => {
+              const study = item.sourceType === 'study';
+              const overdue = isOverdue(item, selectedDate);
+              const completed = Boolean(item.completed);
+              return (
+                <TouchableOpacity key={`${item.sourceType}-${item.id}`} style={[styles.agendaRow, index < items.length - 1 && styles.divider]} onPress={() => openEdit(item)}>
+                  <View style={styles.timeColumn}>
+                    <Text style={[styles.timeText, overdue && styles.overdue, completed && styles.completed]}>{itemStart(item) || 'Any'}</Text>
+                    <Text style={styles.timeSub}>{item.endTime || (item.plannedDuration ? `${item.plannedDuration}m` : '')}</Text>
+                  </View>
+                  <AppIcon name={study ? 'timer-outline' : item.itemType === 'assignment' ? 'document-text-outline' : 'checkmark-circle-outline'} size={20} color={study ? theme.colors.primary : theme.colors.textSecondary} />
+                  <View style={styles.itemCopy}>
+                    <Text style={[styles.itemTitle, completed && styles.completed]} numberOfLines={1}>{study ? item.subjectName : item.title}</Text>
+                    <Text style={styles.itemMeta} numberOfLines={1}>{study ? item.topic || 'Study session' : item.itemType === 'assignment' ? 'Assignment' : item.category || 'Task'}</Text>
+                  </View>
+                  {study ? (
+                    <TouchableOpacity onPress={() => startStudy(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Start study block">
+                      <AppIcon name="play" size={19} color={theme.colors.primary} />
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity onPress={() => toggleTask(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel={completed ? 'Mark incomplete' : 'Mark complete'}>
+                      <AppIcon name={completed ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={completed ? theme.colors.success : theme.colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </Card>
+        )}
+      </ScreenLayout>
+
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <View style={styles.modalHeaderCopy}>
+                <Text style={styles.modalEyebrow}>{form.id ? 'EDIT PLAN ITEM' : 'ADD TO PLAN'}</Text>
+                <Text style={styles.modalTitle}>{form.id ? 'Update this item' : 'What needs a place in your day?'}</Text>
+              </View>
+              <IconButton icon="close" onPress={() => setModalVisible(false)} accessibilityLabel="Close" />
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              {!form.id ? (
+                <View style={styles.typeRow}>
+                  {TYPES.map((type) => {
+                    const selected = form.type === type.id;
+                    return (
+                      <TouchableOpacity key={type.id} style={[styles.typeChip, selected && styles.typeChipSelected]} onPress={() => setForm((current) => ({ ...current, type: type.id, sourceType: type.id === 'study' ? 'study' : 'task' }))}>
+                        <AppIcon name={type.icon} size={18} color={selected ? theme.colors.primary : theme.colors.textSecondary} />
+                        <Text style={[styles.typeText, selected && styles.typeTextSelected]}>{type.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              {form.type === 'study' ? (
+                <>
+                  <Text style={styles.fieldLabel}>Subject</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
+                    {workspace.subjects.map((subject) => {
+                      const selected = form.subjectId === subject.id;
+                      return (
+                        <TouchableOpacity key={subject.id} style={[styles.subjectChip, selected && styles.subjectChipSelected]} onPress={() => setForm((current) => ({ ...current, subjectId: subject.id }))}>
+                          <Text style={[styles.subjectText, selected && styles.subjectTextSelected]}>{subject.name}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                  {workspace.subjects.length === 0 ? <Text style={styles.helper}>Create a subject in Focus before scheduling study.</Text> : null}
+                  <Text style={styles.fieldLabel}>Topic</Text>
+                  <TextInput style={styles.input} value={form.topic} onChangeText={(topic) => setForm((current) => ({ ...current, topic }))} placeholder={selectedSubject ? `What in ${selectedSubject.name}?` : 'Optional topic'} placeholderTextColor={theme.colors.placeholder} />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.fieldLabel}>{form.type === 'assignment' ? 'Assignment' : 'Task'}</Text>
+                  <TextInput style={styles.input} value={form.title} onChangeText={(title) => setForm((current) => ({ ...current, title }))} placeholder={form.type === 'assignment' ? 'e.g. Submit database assignment' : 'e.g. Review lecture notes'} placeholderTextColor={theme.colors.placeholder} />
+                </>
+              )}
+
+              <Text style={styles.fieldLabel}>Time</Text>
+              <View style={styles.timeRow}>
+                <TouchableOpacity style={styles.timeField} onPress={() => setShowStartPicker(true)}>
+                  <AppIcon name="time-outline" size={18} color={theme.colors.textSecondary} />
+                  <View><Text style={styles.timeFieldLabel}>Starts</Text><Text style={styles.timeFieldValue}>{form.startTime}</Text></View>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.timeField} onPress={() => setShowEndPicker(true)}>
+                  <AppIcon name="time-outline" size={18} color={theme.colors.textSecondary} />
+                  <View><Text style={styles.timeFieldLabel}>Ends</Text><Text style={styles.timeFieldValue}>{form.endTime}</Text></View>
+                </TouchableOpacity>
+              </View>
+
+              {showStartPicker ? (
+                <DateTimePicker value={timeToDate(form.startTime)} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, date) => { if (Platform.OS !== 'ios') setShowStartPicker(false); if (date) setForm((current) => ({ ...current, startTime: dateToTime(date) })); }} />
+              ) : null}
+              {showEndPicker ? (
+                <DateTimePicker value={timeToDate(form.endTime, 10)} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, date) => { if (Platform.OS !== 'ios') setShowEndPicker(false); if (date) setForm((current) => ({ ...current, endTime: dateToTime(date) })); }} />
+              ) : null}
+              {Platform.OS === 'ios' && (showStartPicker || showEndPicker) ? <SecondaryButton label="Done" onPress={() => { setShowStartPicker(false); setShowEndPicker(false); }} /> : null}
+
+              <PrimaryButton label={form.id ? 'Save changes' : 'Add to plan'} icon="checkmark" onPress={save} loading={saving} style={styles.saveButton} />
+              {form.id ? <TouchableOpacity style={styles.deleteButton} onPress={removeCurrent}><AppIcon name="trash-outline" size={18} color={theme.colors.error} /><Text style={styles.deleteText}>Remove from plan</Text></TouchableOpacity> : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+function MiniStat({ label, value, danger, styles }) {
+  return <View style={styles.miniStat}><Text style={[styles.miniValue, danger && styles.miniDanger]}>{value}</Text><Text style={styles.miniLabel}>{label}</Text></View>;
+}
+
+const getStyles = (theme) => StyleSheet.create({
+  content: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
+  dateStrip: { gap: spacing.xs, paddingVertical: spacing.xl },
+  dateChip: { width: 54, height: 72, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  dateChipSelected: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  dateDay: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textSecondary },
+  dateDaySelected: { color: theme.colors.primaryText },
+  dateNumber: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text, marginTop: 3 },
+  dateNumberSelected: { color: theme.colors.primaryText },
+  dayCard: { marginBottom: spacing.lg },
+  dayTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  dayCopy: { flex: 1 },
+  dayEyebrow: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 0.8, color: theme.colors.primary },
+  dayTitle: { fontFamily: typography.bold, fontSize: 20, color: theme.colors.text, marginTop: 2 },
+  studyMinutes: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.primary },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  miniStat: { flex: 1 },
+  miniValue: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text },
+  miniDanger: { color: theme.colors.error },
+  miniLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
+  quickAddRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.lg },
+  quickAdd: { flex: 1, minHeight: 48, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  quickAddText: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.text },
+  filterRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xl },
+  filterChip: { paddingHorizontal: spacing.md, minHeight: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  filterChipSelected: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  filterText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary },
+  filterTextSelected: { color: theme.colors.textInverse },
+  loadingCard: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  loadingText: { fontFamily: typography.regular, fontSize: 12, color: theme.colors.textSecondary },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyTitle: { fontFamily: typography.semibold, fontSize: 16, color: theme.colors.text, marginTop: spacing.md },
+  emptyText: { fontFamily: typography.regular, fontSize: 12, lineHeight: 18, textAlign: 'center', color: theme.colors.textSecondary, marginTop: spacing.xs, maxWidth: 290 },
+  emptyButton: { marginTop: spacing.lg },
+  agendaCard: { padding: 0, overflow: 'hidden' },
+  agendaRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.separator },
+  timeColumn: { width: 50 },
+  timeText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.text },
+  timeSub: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textMuted, marginTop: 2 },
+  overdue: { color: theme.colors.error },
+  completed: { textDecorationLine: 'line-through', color: theme.colors.textMuted },
+  itemCopy: { flex: 1 },
+  itemTitle: { fontFamily: typography.semibold, fontSize: 14, color: theme.colors.text },
+  itemMeta: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
+  modalOverlay: { flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end' },
+  modalSheet: { maxHeight: '90%', backgroundColor: theme.colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxl },
+  modalHandle: { width: 42, height: 4, borderRadius: radius.pill, backgroundColor: theme.colors.border, alignSelf: 'center', marginTop: spacing.sm, marginBottom: spacing.md },
+  modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.lg },
+  modalHeaderCopy: { flex: 1 },
+  modalEyebrow: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 0.8, color: theme.colors.primary },
+  modalTitle: { fontFamily: typography.bold, fontSize: 22, color: theme.colors.text, marginTop: 2 },
+  typeRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xl },
+  typeChip: { flex: 1, minHeight: 50, borderRadius: radius.md, borderWidth: 1, borderColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  typeChipSelected: { borderColor: theme.colors.primary },
+  typeText: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.textSecondary },
+  typeTextSelected: { color: theme.colors.primary },
+  fieldLabel: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
+  input: { minHeight: 52, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, fontFamily: typography.regular, fontSize: 14, color: theme.colors.text, backgroundColor: theme.colors.input },
+  subjectRow: { gap: spacing.xs, paddingBottom: spacing.sm },
+  subjectChip: { minHeight: 40, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  subjectChipSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primarySoft },
+  subjectText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary },
+  subjectTextSelected: { color: theme.colors.primary },
+  helper: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textMuted, marginBottom: spacing.sm },
+  timeRow: { flexDirection: 'row', gap: spacing.sm },
+  timeField: { flex: 1, minHeight: 62, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  timeFieldLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary },
+  timeFieldValue: { fontFamily: typography.semibold, fontSize: 14, color: theme.colors.text, marginTop: 1 },
+  saveButton: { marginTop: spacing.xl },
+  deleteButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  deleteText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.error },
+});
