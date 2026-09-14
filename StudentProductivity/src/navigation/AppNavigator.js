@@ -10,7 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
-import { typography } from '../theme/designSystem';
+import { radius, shadow, typography } from '../theme/designSystem';
 import NavigationSessionTracker from '../components/NavigationSessionTracker';
 
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -48,6 +48,7 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => {
         const presentation = TAB_PRESENTATION[route.name] || TAB_PRESENTATION.Home;
+        const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 8 : 4);
 
         return {
           headerShown: false,
@@ -56,24 +57,40 @@ function MainTabs() {
             backgroundColor: theme.colors.tabBackground,
             borderTopColor: theme.colors.tabBorder,
             borderTopWidth: 1,
-            height: Platform.OS === 'ios' ? 82 + insets.bottom : 66 + insets.bottom,
-            paddingBottom: Platform.OS === 'ios' ? insets.bottom : Math.max(insets.bottom, 8),
-            paddingTop: 7,
+            height: 64 + bottomInset,
+            paddingBottom: bottomInset,
+            paddingTop: 6,
+            ...shadow.card,
+          },
+          tabBarItemStyle: {
+            paddingTop: 1,
           },
           tabBarActiveTintColor: theme.colors.tabActive,
           tabBarInactiveTintColor: theme.colors.tabInactive,
           tabBarLabel: presentation.label,
           tabBarLabelStyle: {
-            fontFamily: typography.regular,
-            fontSize: 11,
+            fontFamily: typography.semibold,
+            fontSize: 10,
             marginTop: 1,
           },
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? presentation.activeIcon : presentation.icon}
-              size={21}
-              color={color}
-            />
+            <View
+              style={{
+                minWidth: 38,
+                height: 30,
+                paddingHorizontal: 8,
+                borderRadius: radius.pill,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: focused ? theme.colors.primarySoft : 'transparent',
+              }}
+            >
+              <Ionicons
+                name={focused ? presentation.activeIcon : presentation.icon}
+                size={20}
+                color={color}
+              />
+            </View>
           ),
         };
       }}
