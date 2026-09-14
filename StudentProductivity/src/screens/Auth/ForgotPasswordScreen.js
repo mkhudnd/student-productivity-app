@@ -1,770 +1,382 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Alert, 
-  SafeAreaView,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Dimensions
-} from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { readJson, writeJson } from '../../storage/fileStorage';
 import { useTheme } from '../../context/ThemeContext';
+import {
+  AuthError,
+  AuthField,
+  AuthScaffold,
+  PasswordRequirements,
+  PrimaryButton,
+} from '../../components/AuthScaffold';
+import { radius, spacing, typography } from '../../theme/designSystem';
 
-const { width } = Dimensions.get('window');
-
-// Security questions for password reset
-const SECURITY_QUESTIONS = [
-  "What was the name of your first pet?",
-  "What city were you born in?",
-  "What is your mother's maiden name?",
-  "What was the name of your elementary school?",
-  "What is your favorite book?",
-  "What was your childhood nickname?",
-  "What is the name of your favorite teacher?",
-  "What street did you live on in third grade?",
+const PASSWORD_REQUIREMENTS = [
+  { label: '8+ characters', test: (value) => value.length >= 8 },
+  { label: 'Uppercase letter', test: (value) => /[A-Z]/.test(value) },
+  { label: 'Lowercase letter', test: (value) => /[a-z]/.test(value) },
+  { label: 'Number', test: (value) => /[0-9]/.test(value) },
+  { label: 'Special character', test: (value) => /[^A-Za-z0-9]/.test(value) },
 ];
 
-// ForgotPasswordScreen allows users to reset their password stored in users.json
+const STEP_META = {
+  1: {
+    icon: 'mail-outline',
+    title: 'Find your account',
+    subtitle: 'Enter the email address attached to this local account.',
+  },
+  2: {
+    icon: 'shield-checkmark-outline',
+    title: 'Verify recovery answer',
+    subtitle: 'Answer the recovery question you chose when the account was created.',
+  },
+  3: {
+    icon: 'key-outline',
+    title: 'Choose a new password',
+    subtitle: 'Create a fresh password that meets all requirements.',
+  },
+};
+
 export default function ForgotPasswordScreen({ navigation }) {
   const { theme } = useTheme();
-  const [step, setStep] = useState(1); // 1: Email, 2: Security Question, 3: New Password
+  const styles = getStyles(theme);
+  const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [foundUser, setFoundUser] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [foundUser, setFoundUser] = useState(null);
-  const styles = getStyles(theme);
 
-  // Password requirements checkers
-  const passwordRequirements = [
-    {
-      label: 'At least 8 characters',
-      test: (pw) => pw.length >= 8,
-    },
-    {
-      label: 'One uppercase letter',
-      test: (pw) => /[A-Z]/.test(pw),
-    },
-    {
-      label: 'One lowercase letter',
-      test: (pw) => /[a-z]/.test(pw),
-    },
-    {
-      label: 'One number',
-      test: (pw) => /[0-9]/.test(pw),
-    },
-    {
-      label: 'One special character',
-      test: (pw) => /[^A-Za-z0-9]/.test(pw),
-    },
-  ];
+  const stepMeta = STEP_META[step];
+  const progress = useMemo(() => `${Math.round((step / 3) * 100)}%`, [step]);
 
-  // Step 1: Verify email exists
-  const handleEmailVerification = async () => {
+  const verifyEmail = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
     setError('');
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+
     setLoading(true);
-
-    if (!email.trim()) {
-      setError('Please enter your email address.');
-      setLoading(false);
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      setError('Please enter a valid email address.');
-      setLoading(false);
-      return;
-    }
-
     try {
       const users = (await readJson('users.json')) || [];
-      const user = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-      
+      const user = users.find(
+        (candidate) => String(candidate.email || '').trim().toLowerCase() === normalizedEmail,
+      );
+
       if (!user) {
-        setError('No account found with this email address.');
-        setLoading(false);
+        setError('No local account uses this email address.');
         return;
       }
 
-      // Check if user has security question set up
       if (!user.securityQuestion || !user.securityAnswer) {
-        Alert.alert(
-          'Security Setup Required',
-          'This account needs to set up a security question for password recovery. Please contact support or try logging in with your current password.',
-          [
-            { text: 'Back to Login', onPress: () => navigation.navigate('Login') }
-          ]
-        );
-        setLoading(false);
+        setError('This account does not have recovery information set up.');
         return;
       }
 
       setFoundUser(user);
+      setEmail(normalizedEmail);
       setStep(2);
-    } catch (error) {
-      setError('An error occurred. Please try again.');
+    } catch (verificationError) {
+      console.error('Recovery account lookup failed:', verificationError);
+      setError('Could not read the account data. Try again.');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
-  // Step 2: Verify security question
-  const handleSecurityVerification = async () => {
+  const verifyAnswer = () => {
     setError('');
-    setLoading(true);
-
     if (!securityAnswer.trim()) {
-      setError('Please answer the security question.');
-      setLoading(false);
+      setError('Enter your recovery answer.');
       return;
     }
 
-    // Simple case-insensitive comparison
-    const userAnswer = foundUser.securityAnswer.toLowerCase().trim();
-    const providedAnswer = securityAnswer.toLowerCase().trim();
+    const expected = String(foundUser?.securityAnswer || '').trim().toLowerCase();
+    const provided = securityAnswer.trim().toLowerCase();
 
-    if (userAnswer !== providedAnswer) {
-      setError('Security answer is incorrect. Please try again.');
-      setLoading(false);
+    if (expected !== provided) {
+      setError('That answer does not match this account.');
       return;
     }
 
     setStep(3);
-    setLoading(false);
   };
 
-  // Step 3: Set new password
-  const handlePasswordReset = async () => {
+  const resetPassword = async () => {
     setError('');
-    setLoading(true);
 
     if (!newPassword || !confirmPassword) {
-      setError('Please enter and confirm your new password.');
-      setLoading(false);
+      setError('Enter and confirm your new password.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.');
-      setLoading(false);
+      setError('The two passwords do not match.');
       return;
     }
 
-    // Check password requirements
-    const unmetRequirements = passwordRequirements.filter(req => !req.test(newPassword));
-    if (unmetRequirements.length > 0) {
-      setError('Password does not meet all requirements.');
-      setLoading(false);
+    if (PASSWORD_REQUIREMENTS.some((requirement) => !requirement.test(newPassword))) {
+      setError('Your password still misses one or more requirements.');
       return;
     }
 
+    setLoading(true);
     try {
       const users = (await readJson('users.json')) || [];
-      const userIndex = users.findIndex(u => u.email.toLowerCase() === email.toLowerCase());
-      
+      const userIndex = users.findIndex(
+        (candidate) => String(candidate.email || '').trim().toLowerCase() === email,
+      );
+
       if (userIndex === -1) {
-        setError('User not found. Please start over.');
-        setLoading(false);
+        setError('The account could not be found anymore. Start again.');
         return;
       }
 
-      // Update password and add reset timestamp
-      users[userIndex].password = newPassword;
-      users[userIndex].lastPasswordReset = new Date().toISOString();
-      
+      users[userIndex] = {
+        ...users[userIndex],
+        password: newPassword,
+        lastPasswordReset: new Date().toISOString(),
+      };
       await writeJson('users.json', users);
-      
-      Alert.alert(
-        'Password Reset Successful!', 
-        'Your password has been updated. You can now log in with your new password.',
-        [
-          { text: 'Go to Login', onPress: () => navigation.navigate('Login') }
-        ]
-      );
-    } catch (error) {
-      setError('An error occurred while resetting your password. Please try again.');
+      navigation.replace('Login');
+    } catch (resetError) {
+      console.error('Password reset failed:', resetError);
+      setError('Could not update the password. Try again.');
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
-  const resetProcess = () => {
-    setStep(1);
-    setEmail('');
-    setSecurityAnswer('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setFoundUser(null);
+  const goBackStep = () => {
     setError('');
+    if (step === 1) {
+      navigation.goBack();
+      return;
+    }
+    setStep((value) => Math.max(1, value - 1));
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        style={styles.keyboardView}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={40}
-      >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent} 
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header Section */}
-          <View style={styles.header}>
-            <TouchableOpacity 
-              style={styles.backButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Ionicons name="arrow-back-outline" size={24} color={theme.colors.text} />
-            </TouchableOpacity>
-            
-            <View style={styles.logoContainer}>
-              <Ionicons name="lock-closed" size={48} color={theme.colors.primary} />
-            </View>
-            <Text style={styles.title}>Reset Password</Text>
-            <Text style={styles.subtitle}>Follow the steps to securely reset your password</Text>
+    <AuthScaffold
+      navigation={navigation}
+      showBack
+      icon="lock-open-outline"
+      title="Recover access"
+      subtitle="Reset a password using the recovery details stored with this local account."
+      footer={(
+        <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
+          <Text style={styles.footerLink}>Return to sign in</Text>
+        </TouchableOpacity>
+      )}
+    >
+      <View style={styles.progressHeader}>
+        <View>
+          <Text style={styles.stepCount}>Step {step} of 3</Text>
+          <Text style={styles.stepTitle}>{stepMeta.title}</Text>
+        </View>
+        <View style={styles.stepIcon}>
+          <Ionicons name={stepMeta.icon} size={20} color={theme.colors.primary} />
+        </View>
+      </View>
+
+      <View style={styles.progressTrack}>
+        <View style={[styles.progressFill, { width: progress }]} />
+      </View>
+      <Text style={styles.stepSubtitle}>{stepMeta.subtitle}</Text>
+
+      {step === 1 ? (
+        <AuthField
+          label="Email address"
+          icon="mail-outline"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={verifyEmail}
+          editable={!loading}
+        />
+      ) : null}
+
+      {step === 2 ? (
+        <>
+          <View style={styles.questionCard}>
+            <Text style={styles.questionLabel}>Recovery question</Text>
+            <Text style={styles.questionText}>{foundUser?.securityQuestion}</Text>
           </View>
+          <AuthField
+            label="Your answer"
+            icon="chatbubble-ellipses-outline"
+            value={securityAnswer}
+            onChangeText={setSecurityAnswer}
+            placeholder="Enter your answer"
+            editable={!loading}
+            returnKeyType="done"
+            onSubmitEditing={verifyAnswer}
+          />
+        </>
+      ) : null}
 
-          {/* Progress Indicator */}
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${(step / 3) * 100}%` }]} />
-            </View>
-            <Text style={styles.progressText}>Step {step} of 3</Text>
-          </View>
-
-          {/* Form Card */}
-          <View style={styles.formContainer}>
-            {/* Step 1: Email Verification */}
-            {step === 1 && (
-              <>
-                <View style={styles.stepHeader}>
-                  <Ionicons name="mail-outline" size={32} color={theme.colors.primary} />
-                  <Text style={styles.stepTitle}>Find Your Account</Text>
-                  <Text style={styles.stepSubtitle}>
-                    Enter your email address to begin the password reset process.
-                  </Text>
-                </View>
-                
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>Email Address</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="mail-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your email address"
-                      value={email}
-                      onChangeText={setEmail}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!loading}
-                    />
-                  </View>
-                </View>
-
-                {error ? (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle-outline" size={16} color="#F44336" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                ) : null}
-
-                <TouchableOpacity 
-                  style={[styles.primaryButton, loading && styles.buttonDisabled]} 
-                  onPress={handleEmailVerification}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <View style={styles.buttonRow}>
-                      <Ionicons name="hourglass-outline" size={20} color={theme.colors.background} />
-                      <Text style={styles.buttonText}>Verifying...</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.buttonRow}>
-                      <Ionicons name="search-outline" size={20} color={theme.colors.background} />
-                      <Text style={styles.buttonText}>Find Account</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              </>
+      {step === 3 ? (
+        <>
+          <AuthField
+            label="New password"
+            icon="lock-closed-outline"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="Create a strong password"
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
+            right={(
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={() => setShowPassword((value) => !value)}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={theme.colors.textSecondary}
+                />
+              </TouchableOpacity>
             )}
+          />
+          {newPassword.length > 0 ? (
+            <PasswordRequirements password={newPassword} requirements={PASSWORD_REQUIREMENTS} />
+          ) : null}
+          <AuthField
+            label="Confirm password"
+            icon="checkmark-circle-outline"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Repeat your new password"
+            secureTextEntry={!showPassword}
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!loading}
+          />
+        </>
+      ) : null}
 
-            {/* Step 2: Security Question */}
-            {step === 2 && foundUser && (
-              <>
-                <View style={styles.stepHeader}>
-                  <Ionicons name="shield-checkmark-outline" size={32} color={theme.colors.primary} />
-                  <Text style={styles.stepTitle}>Security Verification</Text>
-                  <Text style={styles.stepSubtitle}>
-                    Answer your security question to verify your identity.
-                  </Text>
-                </View>
-                
-                <View style={styles.questionContainer}>
-                  <Text style={styles.questionLabel}>Security Question:</Text>
-                  <Text style={styles.questionText}>{foundUser.securityQuestion}</Text>
-                </View>
-                
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>Your Answer</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="chatbubble-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your answer"
-                      value={securityAnswer}
-                      onChangeText={setSecurityAnswer}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      autoCapitalize="words"
-                      editable={!loading}
-                    />
-                  </View>
-                </View>
+      <AuthError message={error} />
 
-                {error ? (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle-outline" size={16} color="#F44336" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                ) : null}
+      <PrimaryButton
+        label={step === 1 ? 'Find account' : step === 2 ? 'Verify answer' : 'Update password'}
+        icon={step === 3 ? 'checkmark-outline' : 'arrow-forward-outline'}
+        onPress={step === 1 ? verifyEmail : step === 2 ? verifyAnswer : resetPassword}
+        loading={loading}
+      />
 
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity 
-                    style={styles.secondaryButton} 
-                    onPress={() => setStep(1)}
-                  >
-                    <View style={styles.buttonRow}>
-                      <Ionicons name="arrow-back-outline" size={20} color={theme.colors.primary} />
-                      <Text style={styles.secondaryButtonText}>Back</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.primaryButton, styles.flexButton, loading && styles.buttonDisabled]} 
-                    onPress={handleSecurityVerification}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <View style={styles.buttonRow}>
-                        <Ionicons name="hourglass-outline" size={20} color={theme.colors.background} />
-                        <Text style={styles.buttonText}>Verifying...</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.buttonRow}>
-                        <Ionicons name="checkmark-outline" size={20} color={theme.colors.background} />
-                        <Text style={styles.buttonText}>Verify</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {/* Step 3: New Password */}
-            {step === 3 && (
-              <>
-                <View style={styles.stepHeader}>
-                  <Ionicons name="key-outline" size={32} color={theme.colors.primary} />
-                  <Text style={styles.stepTitle}>Set New Password</Text>
-                  <Text style={styles.stepSubtitle}>
-                    Create a strong new password for your account.
-                  </Text>
-                </View>
-                
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>New Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter new password"
-                      value={newPassword}
-                      onChangeText={setNewPassword}
-                      secureTextEntry={!showPassword}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!loading}
-                    />
-                    <TouchableOpacity 
-                      style={styles.eyeIcon}
-                      onPress={() => setShowPassword(!showPassword)}
-                    >
-                      <Ionicons 
-                        name={showPassword ? "eye-outline" : "eye-off-outline"} 
-                        size={20} 
-                        color={theme.colors.textSecondary} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>Confirm New Password</Text>
-                  <View style={styles.inputWrapper}>
-                    <Ionicons name="lock-closed-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Confirm new password"
-                      value={confirmPassword}
-                      onChangeText={setConfirmPassword}
-                      secureTextEntry={!showPassword}
-                      placeholderTextColor={theme.colors.textSecondary}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      editable={!loading}
-                    />
-                  </View>
-                </View>
-
-                {/* Password Requirements */}
-                {newPassword.length > 0 && (
-                  <View style={styles.requirementsContainer}>
-                    <Text style={styles.requirementsTitle}>Password Requirements</Text>
-                    {passwordRequirements.map((req, idx) => {
-                      const met = req.test(newPassword);
-                      return (
-                        <View key={idx} style={styles.requirementRow}>
-                          <Ionicons 
-                            name={met ? "checkmark-circle" : "ellipse-outline"} 
-                            size={16} 
-                            color={met ? '#4CAF50' : theme.colors.textSecondary} 
-                          />
-                          <Text style={[styles.requirementText, { color: met ? '#4CAF50' : theme.colors.textSecondary }]}>
-                            {req.label}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                )}
-
-                {error ? (
-                  <View style={styles.errorContainer}>
-                    <Ionicons name="alert-circle-outline" size={16} color="#F44336" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity 
-                    style={styles.secondaryButton} 
-                    onPress={() => setStep(2)}
-                  >
-                    <View style={styles.buttonRow}>
-                      <Ionicons name="arrow-back-outline" size={20} color={theme.colors.primary} />
-                      <Text style={styles.secondaryButtonText}>Back</Text>
-                    </View>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity 
-                    style={[styles.primaryButton, styles.flexButton, loading && styles.buttonDisabled]} 
-                    onPress={handlePasswordReset}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <View style={styles.buttonRow}>
-                        <Ionicons name="hourglass-outline" size={20} color={theme.colors.background} />
-                        <Text style={styles.buttonText}>Updating...</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.buttonRow}>
-                        <Ionicons name="shield-checkmark-outline" size={20} color={theme.colors.background} />
-                        <Text style={styles.buttonText}>Reset Password</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
-            <TouchableOpacity 
-              style={styles.loginButton}
-              onPress={() => navigation.navigate('Login')}
-            >
-              <Ionicons name="arrow-back-outline" size={16} color={theme.colors.primary} />
-              <Text style={styles.loginButtonText}>Back to Login</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+      {step > 1 ? (
+        <TouchableOpacity style={styles.backStepButton} onPress={goBackStep} disabled={loading}>
+          <Ionicons name="arrow-back-outline" size={17} color={theme.colors.textSecondary} />
+          <Text style={styles.backStepText}>Previous step</Text>
+        </TouchableOpacity>
+      ) : null}
+    </AuthScaffold>
   );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: theme.colors.background 
-  },
-  keyboardView: { 
-    flex: 1 
-  },
-  scrollContent: { 
-    flexGrow: 1,
-    padding: 24,
-  },
-  header: {
+  progressHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
-    position: 'relative',
+    justifyContent: 'space-between',
+    gap: spacing.md,
   },
-  backButton: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
+  stepCount: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.caption,
+    color: theme.colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
   },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+  stepTitle: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.titleSmall,
     color: theme.colors.text,
-    marginBottom: 8,
-    textAlign: 'center',
+    marginTop: spacing.xxs,
   },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
+  stepIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
   },
-  progressContainer: {
-    marginBottom: 24,
-  },
-  progressBar: {
-    height: 4,
-    backgroundColor: theme.colors.background,
-    borderRadius: 2,
+  progressTrack: {
+    height: 6,
+    borderRadius: radius.pill,
+    backgroundColor: theme.colors.surfaceMuted,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: theme.colors.card,
+    marginTop: spacing.md,
   },
   progressFill: {
     height: '100%',
+    borderRadius: radius.pill,
     backgroundColor: theme.colors.primary,
-    borderRadius: 2,
-  },
-  progressText: {
-    fontSize: 14,
-    color: theme.colors.primary,
-    textAlign: 'center',
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  formContainer: {
-    backgroundColor: theme.colors.card,
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 24,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  stepHeader: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  stepTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginTop: 16,
-    marginBottom: 8,
-    textAlign: 'center',
   },
   stepSubtitle: {
-    fontSize: 16,
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    lineHeight: typography.lineHeights.bodySmall,
     color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xl,
   },
-  inputSection: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.background,
-    paddingHorizontal: 16,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: theme.colors.text,
-    paddingVertical: 16,
-  },
-  eyeIcon: {
-    padding: 4,
-  },
-  questionContainer: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+  questionCard: {
+    borderRadius: radius.md,
+    backgroundColor: theme.colors.primarySoft,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
   },
   questionLabel: {
-    fontSize: 14,
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.caption,
     color: theme.colors.primary,
-    marginBottom: 8,
-    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   questionText: {
-    fontSize: 16,
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.body,
+    lineHeight: typography.lineHeights.body,
     color: theme.colors.text,
-    lineHeight: 22,
+    marginTop: spacing.xs,
   },
-  requirementsContainer: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  },
-  requirementsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 12,
-  },
-  requirementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  requirementText: {
-    fontSize: 14,
-    flex: 1,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
-  },
-  primaryButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+  iconButton: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 24,
+  backStepButton: {
+    minHeight: 44,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
+    gap: spacing.xs,
+    marginTop: spacing.sm,
   },
-  flexButton: {
-    flex: 2,
+  backStepText: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.bodySmall,
+    color: theme.colors.textSecondary,
   },
-  buttonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.background,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  footerLink: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.bodySmall,
     color: theme.colors.primary,
   },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#F44336',
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
-  },
-  footer: {
-    alignItems: 'center',
-  },
-  loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    gap: 8,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: theme.colors.primary,
-  },
-}); 
+});
