@@ -19,6 +19,7 @@ import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
 
 import TodayScreen from '../screens/TodayScreen';
 import PlanScreen from '../screens/PlanScreen';
+import FocusScreen from '../screens/FocusScreen';
 import DeckListScreen from '../screens/Flashcards/DeckListScreen';
 import DeckEditorScreen from '../screens/Flashcards/DeckEditorScreen';
 import StudyScreen from '../screens/Flashcards/StudyScreen';
@@ -79,7 +80,7 @@ function MainTabs() {
     >
       <Tab.Screen name="Home" component={TodayScreen} />
       <Tab.Screen name="Planner" component={PlanScreen} />
-      <Tab.Screen name="Tracker" component={StudyTrackerScreen} />
+      <Tab.Screen name="Tracker" component={FocusScreen} />
       <Tab.Screen name="Flashcards" component={DeckListScreen} />
       <Tab.Screen name="Progress" component={AnalyticsScreen} />
     </Tab.Navigator>
@@ -139,6 +140,7 @@ export default function AppNavigator() {
         <AppStack.Screen name="MainTabs" component={MainTabs} />
         <AppStack.Screen name="DeckEditor" component={DeckEditorScreen} />
         <AppStack.Screen name="Study" component={StudyScreen} />
+        <AppStack.Screen name="TrackerLegacy" component={StudyTrackerScreen} />
         <AppStack.Screen name="Analytics" component={AnalyticsScreen} />
         <AppStack.Screen name="Settings" component={SettingsScreen} />
         <AppStack.Screen name="Profile" component={ProfileScreen} />
