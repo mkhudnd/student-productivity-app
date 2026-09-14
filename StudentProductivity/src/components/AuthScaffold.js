@@ -1,16 +1,15 @@
 import React from 'react';
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import ScreenLayout from './ScreenLayout';
 import { useTheme } from '../context/ThemeContext';
-import { layout, radius, shadow, spacing, typography } from '../theme/designSystem';
+import { layout, radius, spacing, typography } from '../theme/designSystem';
+import { AppIcon, Card, IconButton, PrimaryButton as DSPrimaryButton } from './ui';
 
 export function AuthScaffold({
   navigation,
@@ -36,25 +35,21 @@ export function AuthScaffold({
     >
       <View style={styles.hero}>
         {showBack ? (
-          <TouchableOpacity
+          <IconButton
+            icon="chevron-back"
             style={styles.backButton}
             onPress={() => navigation?.goBack()}
-            accessibilityRole="button"
             accessibilityLabel="Go back"
-          >
-            <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
-          </TouchableOpacity>
+          />
         ) : null}
 
-        <View style={styles.brandIcon}>
-          <Ionicons name={icon} size={28} color={theme.colors.primary} />
-        </View>
+        <AppIcon name={icon} size={30} color={theme.colors.primary} />
         <Text style={styles.eyebrow}>{eyebrow}</Text>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
 
-      <View style={styles.card}>{children}</View>
+      <Card style={styles.card}>{children}</Card>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </ScreenLayout>
   );
@@ -76,7 +71,7 @@ export function AuthField({
     <View style={styles.fieldGroup}>
       {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
       <View style={styles.fieldShell}>
-        {icon ? <Ionicons name={icon} size={19} color={theme.colors.textMuted} /> : null}
+        {icon ? <AppIcon name={icon} size={19} color={theme.colors.textMuted} /> : null}
         <TextInput
           style={styles.input}
           value={value}
@@ -99,34 +94,14 @@ export function AuthError({ message }) {
 
   return (
     <View style={styles.errorBox}>
-      <Ionicons name="alert-circle-outline" size={18} color={theme.colors.error} />
+      <AppIcon name="alert-circle-outline" size={18} color={theme.colors.error} />
       <Text style={styles.errorText}>{message}</Text>
     </View>
   );
 }
 
-export function PrimaryButton({ label, icon, onPress, loading = false, disabled = false }) {
-  const { theme } = useTheme();
-  const styles = getStyles(theme);
-  const isDisabled = disabled || loading;
-
-  return (
-    <TouchableOpacity
-      style={[styles.primaryButton, isDisabled && styles.disabledButton]}
-      onPress={onPress}
-      disabled={isDisabled}
-      accessibilityRole="button"
-    >
-      {loading ? (
-        <ActivityIndicator color={theme.colors.primaryText} />
-      ) : (
-        <>
-          {icon ? <Ionicons name={icon} size={19} color={theme.colors.primaryText} /> : null}
-          <Text style={styles.primaryButtonText}>{label}</Text>
-        </>
-      )}
-    </TouchableOpacity>
-  );
+export function PrimaryButton(props) {
+  return <DSPrimaryButton {...props} />;
 }
 
 export function PasswordRequirements({ password, requirements }) {
@@ -139,7 +114,7 @@ export function PasswordRequirements({ password, requirements }) {
         const met = requirement.test(password);
         return (
           <View key={requirement.label} style={styles.requirementRow}>
-            <Ionicons
+            <AppIcon
               name={met ? 'checkmark-circle' : 'ellipse-outline'}
               size={16}
               color={met ? theme.colors.success : theme.colors.textMuted}
@@ -166,28 +141,12 @@ const getStyles = (theme) => StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.xl,
     position: 'relative',
+    gap: spacing.xs,
   },
   backButton: {
     position: 'absolute',
     left: 0,
     top: spacing.md,
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  brandIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
-    marginBottom: spacing.md,
   },
   eyebrow: {
     fontFamily: typography.semibold,
@@ -196,7 +155,7 @@ const getStyles = (theme) => StyleSheet.create({
     color: theme.colors.primary,
     textTransform: 'uppercase',
     letterSpacing: 1.2,
-    marginBottom: spacing.xs,
+    marginTop: spacing.xs,
   },
   title: {
     fontFamily: typography.bold,
@@ -212,15 +171,10 @@ const getStyles = (theme) => StyleSheet.create({
     color: theme.colors.textSecondary,
     textAlign: 'center',
     maxWidth: 340,
-    marginTop: spacing.xs,
   },
   card: {
-    backgroundColor: theme.colors.surface,
     borderRadius: radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
     padding: spacing.xl,
-    ...shadow.card,
   },
   footer: {
     marginTop: spacing.xl,
@@ -268,7 +222,8 @@ const getStyles = (theme) => StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
     borderRadius: radius.md,
-    backgroundColor: `${theme.colors.error}12`,
+    borderWidth: 1,
+    borderColor: `${theme.colors.error}28`,
     marginBottom: spacing.lg,
   },
   errorText: {
@@ -278,27 +233,10 @@ const getStyles = (theme) => StyleSheet.create({
     lineHeight: typography.lineHeights.bodySmall,
     color: theme.colors.error,
   },
-  primaryButton: {
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    borderRadius: radius.md,
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: spacing.lg,
-  },
-  disabledButton: {
-    opacity: 0.55,
-  },
-  primaryButtonText: {
-    fontFamily: typography.semibold,
-    fontSize: typography.sizes.body,
-    color: theme.colors.primaryText,
-  },
   requirementsBox: {
     borderRadius: radius.md,
-    backgroundColor: theme.colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     padding: spacing.md,
     gap: spacing.xs,
     marginTop: -spacing.xs,
