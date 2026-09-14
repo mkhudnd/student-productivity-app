@@ -29,6 +29,10 @@ async function writeTracker(user, tracker) {
   await AsyncStorage.setItem(trackerKey(user), JSON.stringify(tracker));
 }
 
+function requireUser(user) {
+  if (!user?.email) throw new Error('A signed-in local profile is required.');
+}
+
 export function elapsedFocusSeconds(runtime, now = Date.now()) {
   if (!runtime?.startedAt) return 0;
   const startedAt = Number(runtime.startedAt);
@@ -61,7 +65,7 @@ export async function loadFocusWorkspace(user) {
 }
 
 export async function createSubject(user, name) {
-  if (!user?.email) throw new Error('A signed-in local profile is required.');
+  requireUser(user);
   const trimmedName = name?.trim();
   if (!trimmedName) throw new Error('Subject name is required.');
 
@@ -82,8 +86,73 @@ export async function createSubject(user, name) {
   return subject;
 }
 
+export async function renameSubject(user, subjectId, name) {
+  requireUser(user);
+  const trimmedName = name?.trim();
+  if (!trimmedName) throw new Error('Subject name is required.');
+  const tracker = await readTracker(user);
+  const subjects = Array.isArray(tracker.subjects) ? tracker.subjects : [];
+  if (subjects.some((subject) => subject.id !== subjectId && subject.name?.toLowerCase() === trimmedName.toLowerCase())) {
+    throw new Error('That subject name already exists.');
+  }
+  const found = subjects.some((subject) => subject.id === subjectId);
+  if (!found) throw new Error('Subject not found.');
+  const nextSubjects = subjects.map((subject) => subject.id === subjectId
+    ? { ...subject, name: trimmedName, updatedAt: new Date().toISOString() }
+    : subject);
+  await writeTracker(user, { ...tracker, subjects: nextSubjects });
+  return nextSubjects.find((subject) => subject.id === subjectId);
+}
+
+export async function addSubjectTopic(user, subjectId, name) {
+  requireUser(user);
+  const trimmedName = name?.trim();
+  if (!trimmedName) throw new Error('Topic name is required.');
+  const tracker = await readTracker(user);
+  const subjects = Array.isArray(tracker.subjects) ? tracker.subjects : [];
+  const target = subjects.find((subject) => subject.id === subjectId);
+  if (!target) throw new Error('Subject not found.');
+  const topics = Array.isArray(target.topics) ? target.topics : [];
+  const exists = topics.some((topic) => {
+    const topicLabel = typeof topic === 'string' ? topic : topic?.name;
+    return topicLabel?.toLowerCase() === trimmedName.toLowerCase();
+  });
+  if (exists) throw new Error('That topic already exists.');
+  const nextSubjects = subjects.map((subject) => subject.id === subjectId
+    ? { ...subject, topics: [...topics, { name: trimmedName, lastStudied: null, progress: 'Not Started' }] }
+    : subject);
+  await writeTracker(user, { ...tracker, subjects: nextSubjects });
+  return nextSubjects.find((subject) => subject.id === subjectId);
+}
+
+export async function removeSubjectTopic(user, subjectId, topicName) {
+  requireUser(user);
+  const tracker = await readTracker(user);
+  const subjects = Array.isArray(tracker.subjects) ? tracker.subjects : [];
+  const nextSubjects = subjects.map((subject) => {
+    if (subject.id !== subjectId) return subject;
+    const topics = Array.isArray(subject.topics) ? subject.topics : [];
+    return {
+      ...subject,
+      topics: topics.filter((topic) => (typeof topic === 'string' ? topic : topic?.name) !== topicName),
+    };
+  });
+  await writeTracker(user, { ...tracker, subjects: nextSubjects });
+  return nextSubjects.find((subject) => subject.id === subjectId) || null;
+}
+
+export async function updateStudyGoal(user, dailyMinutes) {
+  requireUser(user);
+  const minutes = Math.max(10, Math.min(1440, Math.round(Number(dailyMinutes || 0))));
+  if (!Number.isFinite(minutes)) throw new Error('Enter a valid daily goal.');
+  const tracker = await readTracker(user);
+  const goals = { ...(tracker.goals || {}), dailyMinutes: minutes };
+  await writeTracker(user, { ...tracker, goals });
+  return goals;
+}
+
 export async function startFocusRuntime(user, input) {
-  if (!user?.email) throw new Error('A signed-in local profile is required.');
+  requireUser(user);
   if (!input?.subjectId) throw new Error('Choose a subject first.');
 
   const existingRaw = await AsyncStorage.getItem(runtimeKey(user));
@@ -161,11 +230,14 @@ export async function completeFocusRuntime(user, runtime, notes = '') {
     const updated = { ...subject, lastStudied: completedAt };
     if (runtime.topic) {
       const topics = Array.isArray(subject.topics) ? subject.topics : [];
-      const exists = topics.some((topic) => topic.name === runtime.topic);
+      const exists = topics.some((topic) => (typeof topic === 'string' ? topic : topic?.name) === runtime.topic);
       updated.topics = exists
-        ? topics.map((topic) => topic.name === runtime.topic
-            ? { ...topic, lastStudied: completedAt, progress: 'In Progress' }
-            : topic)
+        ? topics.map((topic) => {
+            const name = typeof topic === 'string' ? topic : topic?.name;
+            return name === runtime.topic
+              ? { ...(typeof topic === 'string' ? { name: topic } : topic), lastStudied: completedAt, progress: 'In Progress' }
+              : topic;
+          })
         : [...topics, { name: runtime.topic, lastStudied: completedAt, progress: 'In Progress' }];
     }
     return updated;
