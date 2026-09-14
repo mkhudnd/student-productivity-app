@@ -20,10 +20,10 @@ import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
 import TodayScreen from '../screens/TodayScreen';
 import PlanScreen from '../screens/PlanScreen';
 import FocusScreen from '../screens/FocusScreen';
+import StudyManagementScreen from '../screens/StudyManagementScreen';
 import DeckListScreen from '../screens/Flashcards/DeckListScreen';
 import DeckEditorScreen from '../screens/Flashcards/DeckEditorScreen';
 import StudyScreen from '../screens/Flashcards/StudyScreen';
-import StudyTrackerScreen from '../screens/Tracker/StudyTrackerScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import AnalyticsScreen from '../screens/Settings/AnalyticsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -127,7 +127,7 @@ export default function AppNavigator() {
         <AppStack.Screen name="MainTabs" component={MainTabs} />
         <AppStack.Screen name="DeckEditor" component={DeckEditorScreen} />
         <AppStack.Screen name="Study" component={StudyScreen} />
-        <AppStack.Screen name="TrackerLegacy" component={StudyTrackerScreen} />
+        <AppStack.Screen name="TrackerLegacy" component={StudyManagementScreen} />
         <AppStack.Screen name="Analytics" component={AnalyticsScreen} />
         <AppStack.Screen name="Settings" component={SettingsScreen} />
         <AppStack.Screen name="Profile" component={ProfileScreen} />
