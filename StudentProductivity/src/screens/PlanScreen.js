@@ -12,9 +12,17 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import ScreenLayout from '../components/ScreenLayout';
+import {
+  AppIcon,
+  Card,
+  IconButton,
+  PrimaryButton,
+  SectionHeader,
+  ScreenIntro,
+  SecondaryButton,
+} from '../components/ui';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
 import {
@@ -26,7 +34,7 @@ import {
   saveStudyPlan,
   togglePlanTask,
 } from '../utils/planRepository';
-import { radius, shadow, spacing, typography } from '../theme/designSystem';
+import { layout, radius, spacing, typography } from '../theme/designSystem';
 
 const FILTERS = [
   { id: 'agenda', label: 'Agenda' },
@@ -56,11 +64,7 @@ function formatDateHeading(key) {
   const tomorrow = localDateKey(addDays(new Date(), 1));
   if (key === today) return 'Today';
   if (key === tomorrow) return 'Tomorrow';
-  return new Intl.DateTimeFormat('en', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  }).format(date);
+  return new Intl.DateTimeFormat('en', { weekday: 'long', day: 'numeric', month: 'long' }).format(date);
 }
 
 function shortDay(date) {
@@ -74,11 +78,8 @@ function shortDay(date) {
 function timeToDate(value, fallbackHour = 9) {
   const date = new Date();
   const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(value || '');
-  if (match) {
-    date.setHours(Number(match[1]), Number(match[2]), 0, 0);
-  } else {
-    date.setHours(fallbackHour, 0, 0, 0);
-  }
+  if (match) date.setHours(Number(match[1]), Number(match[2]), 0, 0);
+  else date.setHours(fallbackHour, 0, 0, 0);
   return date;
 }
 
@@ -89,20 +90,14 @@ function dateToTime(date) {
 function defaultTimes(dateKey) {
   const now = new Date();
   const start = new Date();
-  if (dateKey === localDateKey()) {
-    start.setHours(Math.min(22, now.getHours() + 1), 0, 0, 0);
-  } else {
-    start.setHours(9, 0, 0, 0);
-  }
+  start.setHours(dateKey === localDateKey() ? Math.min(22, now.getHours() + 1) : 9, 0, 0, 0);
   const end = new Date(start);
   end.setHours(Math.min(23, start.getHours() + 1));
   return { startTime: dateToTime(start), endTime: dateToTime(end) };
 }
 
 function minutesBetween(start, end) {
-  const startDate = timeToDate(start);
-  const endDate = timeToDate(end);
-  return Math.round((endDate.getTime() - startDate.getTime()) / 60000);
+  return Math.round((timeToDate(end).getTime() - timeToDate(start).getTime()) / 60000);
 }
 
 function itemStart(item) {
@@ -171,12 +166,10 @@ export default function PlanScreen({ navigation }) {
     }
   }, [currentUser?.email]);
 
-  useFocusEffect(
-    useCallback(() => {
-      setLoading(true);
-      load();
-    }, [load]),
-  );
+  useFocusEffect(useCallback(() => {
+    setLoading(true);
+    load();
+  }, [load]));
 
   const days = useMemo(() => {
     const start = new Date();
@@ -184,21 +177,10 @@ export default function PlanScreen({ navigation }) {
   }, []);
 
   const items = useMemo(() => {
-    const tasks = workspace.tasks
-      .filter((task) => task.date === selectedDate)
-      .map((task) => ({ ...task, sourceType: 'task' }));
-    const study = workspace.studyPlans
-      .filter((session) => session.date === selectedDate)
-      .map((session) => ({ ...session, sourceType: 'study' }));
+    const tasks = workspace.tasks.filter((task) => task.date === selectedDate).map((task) => ({ ...task, sourceType: 'task' }));
+    const study = workspace.studyPlans.filter((session) => session.date === selectedDate).map((session) => ({ ...session, sourceType: 'study' }));
     const combined = filter === 'tasks' ? tasks : filter === 'study' ? study : [...tasks, ...study];
-    return combined.sort((a, b) => {
-      const aTime = itemStart(a);
-      const bTime = itemStart(b);
-      if (!aTime && !bTime) return 0;
-      if (!aTime) return 1;
-      if (!bTime) return -1;
-      return aTime.localeCompare(bTime);
-    });
+    return combined.sort((a, b) => (itemStart(a) || '99:99').localeCompare(itemStart(b) || '99:99'));
   }, [workspace, selectedDate, filter]);
 
   const summary = useMemo(() => {
@@ -224,18 +206,9 @@ export default function PlanScreen({ navigation }) {
 
   const save = async () => {
     const duration = minutesBetween(form.startTime, form.endTime);
-    if (duration <= 0) {
-      Alert.alert('Check the time', 'End time must be later than start time.');
-      return;
-    }
-    if (form.type === 'study' && !form.subjectId) {
-      Alert.alert('Choose a subject', 'Select what this study block is for.');
-      return;
-    }
-    if (form.type !== 'study' && !form.title.trim()) {
-      Alert.alert('Add a title', 'Give this item a clear title.');
-      return;
-    }
+    if (duration <= 0) return Alert.alert('Check the time', 'End time must be later than start time.');
+    if (form.type === 'study' && !form.subjectId) return Alert.alert('Choose a subject', 'Select what this study block is for.');
+    if (form.type !== 'study' && !form.title.trim()) return Alert.alert('Add a title', 'Give this item a clear title.');
 
     setSaving(true);
     try {
@@ -264,7 +237,6 @@ export default function PlanScreen({ navigation }) {
       setModalVisible(false);
       await load();
     } catch (error) {
-      console.error('Unable to save plan item:', error);
       Alert.alert('Could not save', error.message || 'Please try again.');
     } finally {
       setSaving(false);
@@ -272,74 +244,48 @@ export default function PlanScreen({ navigation }) {
   };
 
   const toggleTask = async (item) => {
-    try {
-      await togglePlanTask(currentUser, item.id);
-      await load();
-    } catch (error) {
-      Alert.alert('Could not update task', 'Please try again.');
-    }
+    await togglePlanTask(currentUser, item.id);
+    await load();
   };
 
-  const removeItem = (item) => {
-    Alert.alert(
-      'Remove from plan?',
-      item.sourceType === 'study'
-        ? 'This removes the planned study block. Completed study history stays intact.'
-        : 'This removes the task from your plan.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            if (item.sourceType === 'study') await deleteStudyPlan(currentUser, item.id);
-            else await deletePlanTask(currentUser, item.id);
-            setModalVisible(false);
-            await load();
-          },
+  const removeCurrent = () => {
+    if (!form.id) return;
+    Alert.alert('Remove from plan?', 'This removes the item from your plan.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove', style: 'destructive', onPress: async () => {
+          if (form.sourceType === 'study') await deleteStudyPlan(currentUser, form.id);
+          else await deletePlanTask(currentUser, form.id);
+          setModalVisible(false);
+          await load();
         },
-      ],
-    );
+      },
+    ]);
   };
 
-  const startStudy = (item) => {
-    navigation.navigate('Tracker', {
-      plannedSessionId: item.id,
-      subjectId: item.subjectId,
-      topic: item.topic || null,
-    });
-  };
+  const startStudy = (item) => navigation.navigate('Tracker', {
+    plannedSessionId: item.id,
+    subjectId: item.subjectId,
+    topic: item.topic || null,
+  });
 
   const selectedSubject = workspace.subjects.find((subject) => subject.id === form.subjectId);
 
   return (
     <>
-      <ScreenLayout
-        scrollable
-        horizontalPadding={false}
-        verticalPadding={false}
-        contentContainerStyle={styles.content}
-      >
-        <View style={styles.headerRow}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.eyebrow}>PLAN</Text>
-            <Text style={styles.title}>Shape your study week</Text>
-            <Text style={styles.subtitle}>Put study, assignments and tasks into one realistic agenda.</Text>
-          </View>
-          <TouchableOpacity style={styles.addButton} onPress={() => openCreate('task')}>
-            <Ionicons name="add" size={22} color={theme.colors.primaryText} />
-          </TouchableOpacity>
-        </View>
+      <ScreenLayout scrollable horizontalPadding={false} verticalPadding={false} contentContainerStyle={styles.content}>
+        <ScreenIntro
+          eyebrow="Plan"
+          title="Shape your study week"
+          subtitle="Put study, assignments and tasks into one realistic agenda."
+          right={<IconButton icon="add" onPress={() => openCreate('task')} accessibilityLabel="Add plan item" />}
+        />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateStrip}>
           {days.map((day) => {
             const selected = day.key === selectedDate;
             return (
-              <TouchableOpacity
-                key={day.key}
-                style={[styles.dateChip, selected && styles.dateChipSelected]}
-                onPress={() => setSelectedDate(day.key)}
-              >
+              <TouchableOpacity key={day.key} style={[styles.dateChip, selected && styles.dateChipSelected]} onPress={() => setSelectedDate(day.key)}>
                 <Text style={[styles.dateDay, selected && styles.dateDaySelected]}>{day.day}</Text>
                 <Text style={[styles.dateNumber, selected && styles.dateNumberSelected]}>{day.number}</Text>
               </TouchableOpacity>
@@ -347,881 +293,239 @@ export default function PlanScreen({ navigation }) {
           })}
         </ScrollView>
 
-        <View style={styles.dayCard}>
-          <View style={styles.dayCardTop}>
-            <View>
+        <Card style={styles.dayCard}>
+          <View style={styles.dayTop}>
+            <View style={styles.dayCopy}>
               <Text style={styles.dayEyebrow}>{formatDateHeading(selectedDate).toUpperCase()}</Text>
               <Text style={styles.dayTitle}>{summary.total} planned item{summary.total === 1 ? '' : 's'}</Text>
             </View>
-            <View style={styles.dayBadge}>
-              <Ionicons name="time-outline" size={16} color={theme.colors.primary} />
-              <Text style={styles.dayBadgeText}>{summary.studyMinutes}m study</Text>
-            </View>
+            <Text style={styles.studyMinutes}>{summary.studyMinutes}m study</Text>
           </View>
-
-          <View style={styles.dayStats}>
+          <View style={styles.statsRow}>
             <MiniStat label="Completed" value={summary.completed} styles={styles} />
             <MiniStat label="Study" value={`${summary.studyMinutes}m`} styles={styles} />
             <MiniStat label="Overdue" value={summary.overdue} danger={summary.overdue > 0} styles={styles} />
           </View>
-
           <View style={styles.quickAddRow}>
             {TYPES.map((type) => (
               <TouchableOpacity key={type.id} style={styles.quickAdd} onPress={() => openCreate(type.id)}>
-                <Ionicons name={type.icon} size={17} color={theme.colors.primary} />
+                <AppIcon name={type.icon} size={18} color={theme.colors.primary} />
                 <Text style={styles.quickAddText}>{type.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        </Card>
 
         <View style={styles.filterRow}>
           {FILTERS.map((item) => {
             const selected = filter === item.id;
             return (
-              <TouchableOpacity
-                key={item.id}
-                style={[styles.filterChip, selected && styles.filterChipSelected]}
-                onPress={() => setFilter(item.id)}
-              >
+              <TouchableOpacity key={item.id} style={[styles.filterChip, selected && styles.filterChipSelected]} onPress={() => setFilter(item.id)}>
                 <Text style={[styles.filterText, selected && styles.filterTextSelected]}>{item.label}</Text>
               </TouchableOpacity>
             );
           })}
         </View>
 
-        <View style={styles.sectionHeader}>
-          <View>
-            <Text style={styles.sectionTitle}>Agenda</Text>
-            <Text style={styles.sectionSubtitle}>Tap an item to edit it.</Text>
-          </View>
-        </View>
+        <SectionHeader title="Agenda" subtitle="Tap an item to edit it." />
 
         {loading ? (
-          <View style={styles.loadingCard}>
-            <ActivityIndicator color={theme.colors.primary} />
-            <Text style={styles.loadingText}>Loading your plan…</Text>
-          </View>
+          <Card style={styles.loadingCard}><ActivityIndicator color={theme.colors.primary} /><Text style={styles.loadingText}>Loading your plan…</Text></Card>
         ) : items.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <View style={styles.emptyIcon}>
-              <Ionicons name="calendar-clear-outline" size={24} color={theme.colors.primary} />
-            </View>
+          <Card style={styles.emptyCard}>
+            <AppIcon name="calendar-clear-outline" size={26} color={theme.colors.primary} />
             <Text style={styles.emptyTitle}>Nothing planned here</Text>
             <Text style={styles.emptyText}>Add a study block, task or assignment and give this day some structure.</Text>
-            <TouchableOpacity style={styles.emptyButton} onPress={() => openCreate('study')}>
-              <Text style={styles.emptyButtonText}>Plan study time</Text>
-            </TouchableOpacity>
-          </View>
+            <SecondaryButton label="Plan study time" icon="timer-outline" onPress={() => openCreate('study')} style={styles.emptyButton} />
+          </Card>
         ) : (
-          <View style={styles.agendaCard}>
+          <Card style={styles.agendaCard}>
             {items.map((item, index) => {
               const study = item.sourceType === 'study';
               const overdue = isOverdue(item, selectedDate);
               const completed = Boolean(item.completed);
               return (
-                <TouchableOpacity
-                  key={`${item.sourceType}-${item.id}`}
-                  style={[styles.agendaRow, index < items.length - 1 && styles.agendaDivider]}
-                  onPress={() => openEdit(item)}
-                >
+                <TouchableOpacity key={`${item.sourceType}-${item.id}`} style={[styles.agendaRow, index < items.length - 1 && styles.divider]} onPress={() => openEdit(item)}>
                   <View style={styles.timeColumn}>
-                    <Text style={[styles.timeText, overdue && styles.overdueText, completed && styles.completedText]}>{itemStart(item) || 'Any'}</Text>
-                    <Text style={styles.timeEnd}>{item.endTime || (item.plannedDuration ? `${item.plannedDuration}m` : '')}</Text>
+                    <Text style={[styles.timeText, overdue && styles.overdue, completed && styles.completed]}>{itemStart(item) || 'Any'}</Text>
+                    <Text style={styles.timeSub}>{item.endTime || (item.plannedDuration ? `${item.plannedDuration}m` : '')}</Text>
                   </View>
-
-                  {study ? (
-                    <View style={[styles.itemIcon, { backgroundColor: theme.colors.primarySoft }]}>
-                      <Ionicons name="timer-outline" size={18} color={theme.colors.primary} />
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.itemIcon, { backgroundColor: completed ? theme.colors.accentSoft : theme.colors.surfaceMuted }]}
-                      onPress={(event) => {
-                        event.stopPropagation?.();
-                        toggleTask(item);
-                      }}
-                    >
-                      <Ionicons
-                        name={completed ? 'checkmark-circle' : item.itemType === 'assignment' ? 'document-text-outline' : 'ellipse-outline'}
-                        size={19}
-                        color={completed ? theme.colors.accent : theme.colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  )}
-
+                  <AppIcon name={study ? 'timer-outline' : item.itemType === 'assignment' ? 'document-text-outline' : 'checkmark-circle-outline'} size={20} color={study ? theme.colors.primary : theme.colors.textSecondary} />
                   <View style={styles.itemCopy}>
-                    <Text style={[styles.itemTitle, completed && styles.completedTitle]} numberOfLines={1}>
-                      {study ? item.subjectName : item.title}
-                    </Text>
-                    <View style={styles.metaRow}>
-                      <Text style={styles.itemMeta} numberOfLines={1}>
-                        {study ? (item.topic || 'Study session') : (item.itemType === 'assignment' ? 'Assignment' : item.category || 'Task')}
-                      </Text>
-                      {overdue ? <Text style={styles.overdueBadge}>Missed</Text> : null}
-                    </View>
+                    <Text style={[styles.itemTitle, completed && styles.completed]} numberOfLines={1}>{study ? item.subjectName : item.title}</Text>
+                    <Text style={styles.itemMeta} numberOfLines={1}>{study ? item.topic || 'Study session' : item.itemType === 'assignment' ? 'Assignment' : item.category || 'Task'}</Text>
                   </View>
-
                   {study ? (
-                    <TouchableOpacity
-                      style={styles.playButton}
-                      onPress={(event) => {
-                        event.stopPropagation?.();
-                        startStudy(item);
-                      }}
-                    >
-                      <Ionicons name="play" size={16} color={theme.colors.primaryText} />
+                    <TouchableOpacity onPress={() => startStudy(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel="Start study block">
+                      <AppIcon name="play" size={19} color={theme.colors.primary} />
                     </TouchableOpacity>
                   ) : (
-                    <Ionicons name="chevron-forward" size={17} color={theme.colors.textMuted} />
+                    <TouchableOpacity onPress={() => toggleTask(item)} hitSlop={8} accessibilityRole="button" accessibilityLabel={completed ? 'Mark incomplete' : 'Mark complete'}>
+                      <AppIcon name={completed ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={completed ? theme.colors.success : theme.colors.textMuted} />
+                    </TouchableOpacity>
                   )}
                 </TouchableOpacity>
               );
             })}
-          </View>
+          </Card>
         )}
       </ScreenLayout>
 
-      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => !saving && setModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHandle} />
             <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>{form.id ? 'Edit plan item' : 'Add to plan'}</Text>
-                <Text style={styles.modalSubtitle}>{formatDateHeading(selectedDate)}</Text>
+              <View style={styles.modalHeaderCopy}>
+                <Text style={styles.modalEyebrow}>{form.id ? 'EDIT PLAN ITEM' : 'ADD TO PLAN'}</Text>
+                <Text style={styles.modalTitle}>{form.id ? 'Update this item' : 'What needs a place in your day?'}</Text>
               </View>
-              <TouchableOpacity style={styles.modalClose} onPress={() => setModalVisible(false)} disabled={saving}>
-                <Ionicons name="close" size={20} color={theme.colors.text} />
-              </TouchableOpacity>
+              <IconButton icon="close" onPress={() => setModalVisible(false)} accessibilityLabel="Close" />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={styles.inputLabel}>Type</Text>
-              <View style={styles.typeRow}>
-                {TYPES.map((type) => {
-                  const selected = form.type === type.id;
-                  return (
-                    <TouchableOpacity
-                      key={type.id}
-                      style={[styles.typeChip, selected && styles.typeChipSelected]}
-                      onPress={() => {
-                        if (form.id && form.sourceType === 'study' && type.id !== 'study') return;
-                        if (form.id && form.sourceType === 'task' && type.id === 'study') return;
-                        setForm((current) => ({ ...current, type: type.id }));
-                      }}
-                    >
-                      <Ionicons name={type.icon} size={16} color={selected ? theme.colors.primaryText : theme.colors.textSecondary} />
-                      <Text style={[styles.typeText, selected && styles.typeTextSelected]}>{type.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              {!form.id ? (
+                <View style={styles.typeRow}>
+                  {TYPES.map((type) => {
+                    const selected = form.type === type.id;
+                    return (
+                      <TouchableOpacity key={type.id} style={[styles.typeChip, selected && styles.typeChipSelected]} onPress={() => setForm((current) => ({ ...current, type: type.id, sourceType: type.id === 'study' ? 'study' : 'task' }))}>
+                        <AppIcon name={type.icon} size={18} color={selected ? theme.colors.primary : theme.colors.textSecondary} />
+                        <Text style={[styles.typeText, selected && styles.typeTextSelected]}>{type.label}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : null}
 
               {form.type === 'study' ? (
                 <>
-                  <Text style={styles.inputLabel}>Subject</Text>
-                  {workspace.subjects.length === 0 ? (
-                    <TouchableOpacity style={styles.noSubjectCard} onPress={() => {
-                      setModalVisible(false);
-                      navigation.navigate('Tracker');
-                    }}>
-                      <Ionicons name="add-circle-outline" size={20} color={theme.colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.noSubjectTitle}>Create a subject in Focus</Text>
-                        <Text style={styles.noSubjectText}>Study blocks need a subject so sessions stay connected.</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
-                      {workspace.subjects.map((subject) => {
-                        const selected = form.subjectId === subject.id;
-                        return (
-                          <TouchableOpacity
-                            key={subject.id}
-                            style={[styles.subjectChip, selected && styles.subjectChipSelected]}
-                            onPress={() => setForm((current) => ({ ...current, subjectId: subject.id, topic: '' }))}
-                          >
-                            <Text style={[styles.subjectText, selected && styles.subjectTextSelected]}>{subject.name}</Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </ScrollView>
-                  )}
-
-                  {selectedSubject?.topics?.length > 0 ? (
-                    <>
-                      <Text style={styles.inputLabel}>Topic</Text>
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
-                        <TouchableOpacity
-                          style={[styles.subjectChip, !form.topic && styles.subjectChipSelected]}
-                          onPress={() => setForm((current) => ({ ...current, topic: '' }))}
-                        >
-                          <Text style={[styles.subjectText, !form.topic && styles.subjectTextSelected]}>General</Text>
-                        </TouchableOpacity>
-                        {selectedSubject.topics.map((topic) => {
-                          const topicName = typeof topic === 'string' ? topic : topic.name;
-                          const selected = form.topic === topicName;
-                          return (
-                            <TouchableOpacity
-                              key={topicName}
-                              style={[styles.subjectChip, selected && styles.subjectChipSelected]}
-                              onPress={() => setForm((current) => ({ ...current, topic: topicName }))}
-                            >
-                              <Text style={[styles.subjectText, selected && styles.subjectTextSelected]}>{topicName}</Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </ScrollView>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={styles.inputLabel}>Topic (optional)</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={form.topic}
-                        onChangeText={(topic) => setForm((current) => ({ ...current, topic }))}
-                        placeholder="What will you study?"
-                        placeholderTextColor={theme.colors.placeholder}
-                      />
-                    </>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Text style={styles.inputLabel}>{form.type === 'assignment' ? 'Assignment' : 'Task'} title</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={form.title}
-                    onChangeText={(title) => setForm((current) => ({ ...current, title }))}
-                    placeholder={form.type === 'assignment' ? 'e.g. Submit database assignment' : 'e.g. Revise chapter 4'}
-                    placeholderTextColor={theme.colors.placeholder}
-                  />
-                </>
-              )}
-
-              <Text style={styles.inputLabel}>Time</Text>
-              <View style={styles.timePickerRow}>
-                <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowStartPicker(true)}>
-                  <Text style={styles.timePickerLabel}>Starts</Text>
-                  <Text style={styles.timePickerValue}>{form.startTime}</Text>
-                </TouchableOpacity>
-                <Ionicons name="arrow-forward" size={17} color={theme.colors.textMuted} />
-                <TouchableOpacity style={styles.timePickerButton} onPress={() => setShowEndPicker(true)}>
-                  <Text style={styles.timePickerLabel}>Ends</Text>
-                  <Text style={styles.timePickerValue}>{form.endTime}</Text>
-                </TouchableOpacity>
-              </View>
-
-              {form.type !== 'study' ? (
-                <>
-                  <Text style={styles.inputLabel}>Priority</Text>
-                  <View style={styles.priorityRow}>
-                    {['low', 'medium', 'high'].map((priority) => {
-                      const selected = form.priority === priority;
+                  <Text style={styles.fieldLabel}>Subject</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.subjectRow}>
+                    {workspace.subjects.map((subject) => {
+                      const selected = form.subjectId === subject.id;
                       return (
-                        <TouchableOpacity
-                          key={priority}
-                          style={[styles.priorityChip, selected && styles.priorityChipSelected]}
-                          onPress={() => setForm((current) => ({ ...current, priority }))}
-                        >
-                          <Text style={[styles.priorityText, selected && styles.priorityTextSelected]}>{priority}</Text>
+                        <TouchableOpacity key={subject.id} style={[styles.subjectChip, selected && styles.subjectChipSelected]} onPress={() => setForm((current) => ({ ...current, subjectId: subject.id }))}>
+                          <Text style={[styles.subjectText, selected && styles.subjectTextSelected]}>{subject.name}</Text>
                         </TouchableOpacity>
                       );
                     })}
-                  </View>
+                  </ScrollView>
+                  {workspace.subjects.length === 0 ? <Text style={styles.helper}>Create a subject in Focus before scheduling study.</Text> : null}
+                  <Text style={styles.fieldLabel}>Topic</Text>
+                  <TextInput style={styles.input} value={form.topic} onChangeText={(topic) => setForm((current) => ({ ...current, topic }))} placeholder={selectedSubject ? `What in ${selectedSubject.name}?` : 'Optional topic'} placeholderTextColor={theme.colors.placeholder} />
                 </>
-              ) : null}
+              ) : (
+                <>
+                  <Text style={styles.fieldLabel}>{form.type === 'assignment' ? 'Assignment' : 'Task'}</Text>
+                  <TextInput style={styles.input} value={form.title} onChangeText={(title) => setForm((current) => ({ ...current, title }))} placeholder={form.type === 'assignment' ? 'e.g. Submit database assignment' : 'e.g. Review lecture notes'} placeholderTextColor={theme.colors.placeholder} />
+                </>
+              )}
 
-              <TouchableOpacity style={[styles.saveButton, saving && styles.disabledButton]} onPress={save} disabled={saving}>
-                {saving ? <ActivityIndicator color={theme.colors.primaryText} /> : <Ionicons name="checkmark" size={19} color={theme.colors.primaryText} />}
-                <Text style={styles.saveButtonText}>{saving ? 'Saving…' : form.id ? 'Save changes' : 'Add to plan'}</Text>
-              </TouchableOpacity>
-
-              {form.id ? (
-                <TouchableOpacity
-                  style={styles.deleteButton}
-                  onPress={() => {
-                    const existing = items.find((item) => item.id === form.id && item.sourceType === form.sourceType);
-                    if (existing) removeItem(existing);
-                  }}
-                  disabled={saving}
-                >
-                  <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
-                  <Text style={styles.deleteText}>Remove from plan</Text>
+              <Text style={styles.fieldLabel}>Time</Text>
+              <View style={styles.timeRow}>
+                <TouchableOpacity style={styles.timeField} onPress={() => setShowStartPicker(true)}>
+                  <AppIcon name="time-outline" size={18} color={theme.colors.textSecondary} />
+                  <View><Text style={styles.timeFieldLabel}>Starts</Text><Text style={styles.timeFieldValue}>{form.startTime}</Text></View>
                 </TouchableOpacity>
+                <TouchableOpacity style={styles.timeField} onPress={() => setShowEndPicker(true)}>
+                  <AppIcon name="time-outline" size={18} color={theme.colors.textSecondary} />
+                  <View><Text style={styles.timeFieldLabel}>Ends</Text><Text style={styles.timeFieldValue}>{form.endTime}</Text></View>
+                </TouchableOpacity>
+              </View>
+
+              {showStartPicker ? (
+                <DateTimePicker value={timeToDate(form.startTime)} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, date) => { if (Platform.OS !== 'ios') setShowStartPicker(false); if (date) setForm((current) => ({ ...current, startTime: dateToTime(date) })); }} />
               ) : null}
+              {showEndPicker ? (
+                <DateTimePicker value={timeToDate(form.endTime, 10)} mode="time" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={(_, date) => { if (Platform.OS !== 'ios') setShowEndPicker(false); if (date) setForm((current) => ({ ...current, endTime: dateToTime(date) })); }} />
+              ) : null}
+              {Platform.OS === 'ios' && (showStartPicker || showEndPicker) ? <SecondaryButton label="Done" onPress={() => { setShowStartPicker(false); setShowEndPicker(false); }} /> : null}
+
+              <PrimaryButton label={form.id ? 'Save changes' : 'Add to plan'} icon="checkmark" onPress={save} loading={saving} style={styles.saveButton} />
+              {form.id ? <TouchableOpacity style={styles.deleteButton} onPress={removeCurrent}><AppIcon name="trash-outline" size={18} color={theme.colors.error} /><Text style={styles.deleteText}>Remove from plan</Text></TouchableOpacity> : null}
             </ScrollView>
           </View>
         </View>
       </Modal>
-
-      {showStartPicker ? (
-        <DateTimePicker
-          value={timeToDate(form.startTime)}
-          mode="time"
-          is24Hour
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event, value) => {
-            if (Platform.OS !== 'ios') setShowStartPicker(false);
-            if (value) setForm((current) => ({ ...current, startTime: dateToTime(value) }));
-          }}
-        />
-      ) : null}
-
-      {showEndPicker ? (
-        <DateTimePicker
-          value={timeToDate(form.endTime, 10)}
-          mode="time"
-          is24Hour
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={(event, value) => {
-            if (Platform.OS !== 'ios') setShowEndPicker(false);
-            if (value) setForm((current) => ({ ...current, endTime: dateToTime(value) }));
-          }}
-        />
-      ) : null}
     </>
   );
 }
 
 function MiniStat({ label, value, danger, styles }) {
-  return (
-    <View style={styles.miniStat}>
-      <Text style={[styles.miniStatValue, danger && styles.miniStatDanger]}>{value}</Text>
-      <Text style={styles.miniStatLabel}>{label}</Text>
-    </View>
-  );
+  return <View style={styles.miniStat}><Text style={[styles.miniValue, danger && styles.miniDanger]}>{value}</Text><Text style={styles.miniLabel}>{label}</Text></View>;
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 40,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  headerCopy: { flex: 1 },
-  eyebrow: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.primary,
-    letterSpacing: 1.1,
-    marginBottom: spacing.xs,
-  },
-  title: {
-    fontFamily: typography.bold,
-    fontSize: 30,
-    lineHeight: 38,
-    color: theme.colors.text,
-  },
-  subtitle: {
-    fontFamily: typography.regular,
-    fontSize: 14,
-    lineHeight: 20,
-    color: theme.colors.textSecondary,
-    marginTop: spacing.xs,
-  },
-  addButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primary,
-    ...shadow.card,
-  },
-  dateStrip: {
-    gap: spacing.xs,
-    paddingBottom: spacing.lg,
-  },
-  dateChip: {
-    width: 58,
-    height: 72,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  dateChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  dateDay: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-  },
-  dateDaySelected: { color: 'rgba(255,255,255,0.78)' },
-  dateNumber: {
-    fontFamily: typography.bold,
-    fontSize: 19,
-    color: theme.colors.text,
-    marginTop: 3,
-  },
+  content: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.lg, paddingBottom: spacing.xxxl },
+  dateStrip: { gap: spacing.xs, paddingVertical: spacing.xl },
+  dateChip: { width: 54, height: 72, borderRadius: radius.lg, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  dateChipSelected: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  dateDay: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textSecondary },
+  dateDaySelected: { color: theme.colors.primaryText },
+  dateNumber: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text, marginTop: 3 },
   dateNumberSelected: { color: theme.colors.primaryText },
-  dayCard: {
-    borderRadius: 26,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
-    ...shadow.card,
-  },
-  dayCardTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  dayEyebrow: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    letterSpacing: 0.8,
-    color: theme.colors.primary,
-  },
-  dayTitle: {
-    fontFamily: typography.bold,
-    fontSize: 20,
-    color: theme.colors.text,
-    marginTop: 3,
-  },
-  dayBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: radius.pill,
-    backgroundColor: theme.colors.primarySoft,
-  },
-  dayBadgeText: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    color: theme.colors.primary,
-  },
-  dayStats: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.lg,
-  },
-  miniStat: {
-    flex: 1,
-    borderRadius: 16,
-    backgroundColor: theme.colors.surfaceMuted,
-    padding: spacing.sm,
-  },
-  miniStatValue: {
-    fontFamily: typography.bold,
-    fontSize: 18,
-    color: theme.colors.text,
-  },
-  miniStatDanger: { color: theme.colors.error },
-  miniStatLabel: {
-    fontFamily: typography.regular,
-    fontSize: 10,
-    color: theme.colors.textSecondary,
-    marginTop: 1,
-  },
-  quickAddRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginTop: spacing.lg,
-  },
-  quickAdd: {
-    flex: 1,
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    borderRadius: 14,
-    backgroundColor: theme.colors.primarySoft,
-  },
-  quickAddText: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    color: theme.colors.primary,
-  },
-  filterRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.xl,
-  },
-  filterChip: {
-    minHeight: 38,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  filterChipSelected: {
-    backgroundColor: theme.colors.text,
-    borderColor: theme.colors.text,
-  },
-  filterText: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
+  dayCard: { marginBottom: spacing.lg },
+  dayTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md },
+  dayCopy: { flex: 1 },
+  dayEyebrow: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 0.8, color: theme.colors.primary },
+  dayTitle: { fontFamily: typography.bold, fontSize: 20, color: theme.colors.text, marginTop: 2 },
+  studyMinutes: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.primary },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
+  miniStat: { flex: 1 },
+  miniValue: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text },
+  miniDanger: { color: theme.colors.error },
+  miniLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 1 },
+  quickAddRow: { flexDirection: 'row', gap: spacing.xs, marginTop: spacing.lg },
+  quickAdd: { flex: 1, minHeight: 48, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  quickAddText: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.text },
+  filterRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xl },
+  filterChip: { paddingHorizontal: spacing.md, minHeight: 40, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.border },
+  filterChipSelected: { backgroundColor: theme.colors.text, borderColor: theme.colors.text },
+  filterText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary },
   filterTextSelected: { color: theme.colors.textInverse },
-  sectionHeader: { marginBottom: spacing.sm },
-  sectionTitle: {
-    fontFamily: typography.semibold,
-    fontSize: 18,
-    color: theme.colors.text,
-  },
-  sectionSubtitle: {
-    fontFamily: typography.regular,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  loadingCard: {
-    minHeight: 140,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    borderRadius: 22,
-    backgroundColor: theme.colors.surface,
-  },
-  loadingText: {
-    fontFamily: typography.regular,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  emptyCard: {
-    alignItems: 'center',
-    borderRadius: 22,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 28,
-  },
-  emptyIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
-  },
-  emptyTitle: {
-    fontFamily: typography.semibold,
-    fontSize: 16,
-    color: theme.colors.text,
-    marginTop: spacing.md,
-  },
-  emptyText: {
-    maxWidth: 290,
-    fontFamily: typography.regular,
-    fontSize: 12,
-    lineHeight: 18,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.xs,
-  },
-  emptyButton: {
-    marginTop: spacing.lg,
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 14,
-    backgroundColor: theme.colors.primarySoft,
-  },
-  emptyButtonText: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.primary,
-  },
-  agendaCard: {
-    borderRadius: 22,
-    backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    overflow: 'hidden',
-  },
-  agendaRow: {
-    minHeight: 78,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  agendaDivider: {
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.separator,
-  },
-  timeColumn: { width: 48 },
-  timeText: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.text,
-  },
-  timeEnd: {
-    fontFamily: typography.regular,
-    fontSize: 10,
-    color: theme.colors.textMuted,
-    marginTop: 2,
-  },
-  overdueText: { color: theme.colors.error },
-  completedText: { color: theme.colors.textMuted },
-  itemIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  loadingCard: { minHeight: 150, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  loadingText: { fontFamily: typography.regular, fontSize: 12, color: theme.colors.textSecondary },
+  emptyCard: { alignItems: 'center', paddingVertical: spacing.xxl },
+  emptyTitle: { fontFamily: typography.semibold, fontSize: 16, color: theme.colors.text, marginTop: spacing.md },
+  emptyText: { fontFamily: typography.regular, fontSize: 12, lineHeight: 18, textAlign: 'center', color: theme.colors.textSecondary, marginTop: spacing.xs, maxWidth: 290 },
+  emptyButton: { marginTop: spacing.lg },
+  agendaCard: { padding: 0, overflow: 'hidden' },
+  agendaRow: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md },
+  divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.separator },
+  timeColumn: { width: 50 },
+  timeText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.text },
+  timeSub: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textMuted, marginTop: 2 },
+  overdue: { color: theme.colors.error },
+  completed: { textDecorationLine: 'line-through', color: theme.colors.textMuted },
   itemCopy: { flex: 1 },
-  itemTitle: {
-    fontFamily: typography.semibold,
-    fontSize: 14,
-    color: theme.colors.text,
-  },
-  completedTitle: {
-    textDecorationLine: 'line-through',
-    color: theme.colors.textMuted,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginTop: 2,
-  },
-  itemMeta: {
-    flexShrink: 1,
-    fontFamily: typography.regular,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-  },
-  overdueBadge: {
-    fontFamily: typography.semibold,
-    fontSize: 10,
-    color: theme.colors.error,
-  },
-  playButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primary,
-  },
-  modalBackdrop: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: theme.colors.overlay,
-  },
-  modalCard: {
-    maxHeight: '88%',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    backgroundColor: theme.colors.surface,
-    padding: spacing.xl,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
-  modalTitle: {
-    fontFamily: typography.semibold,
-    fontSize: 22,
-    color: theme.colors.text,
-  },
-  modalSubtitle: {
-    fontFamily: typography.regular,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  modalClose: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceMuted,
-  },
-  inputLabel: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  typeRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  typeChip: {
-    flex: 1,
-    minHeight: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-  },
-  typeChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  typeText: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-  },
-  typeTextSelected: { color: theme.colors.primaryText },
-  input: {
-    minHeight: 52,
-    borderRadius: 15,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.input,
-    paddingHorizontal: spacing.md,
-    fontFamily: typography.regular,
-    fontSize: 14,
-    color: theme.colors.text,
-    marginBottom: spacing.lg,
-  },
-  noSubjectCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: 16,
-    backgroundColor: theme.colors.primarySoft,
-    marginBottom: spacing.lg,
-  },
-  noSubjectTitle: {
-    fontFamily: typography.semibold,
-    fontSize: 13,
-    color: theme.colors.text,
-  },
-  noSubjectText: {
-    fontFamily: typography.regular,
-    fontSize: 11,
-    lineHeight: 16,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  subjectRow: {
-    gap: spacing.xs,
-    paddingBottom: spacing.lg,
-  },
-  subjectChip: {
-    minHeight: 38,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  subjectChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  subjectText: {
-    fontFamily: typography.semibold,
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-  },
-  subjectTextSelected: { color: theme.colors.primaryText },
-  timePickerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  timePickerButton: {
-    flex: 1,
-    minHeight: 64,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    borderRadius: 16,
-    backgroundColor: theme.colors.input,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  timePickerLabel: {
-    fontFamily: typography.regular,
-    fontSize: 10,
-    color: theme.colors.textSecondary,
-  },
-  timePickerValue: {
-    fontFamily: typography.semibold,
-    fontSize: 18,
-    color: theme.colors.text,
-    marginTop: 2,
-  },
-  priorityRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  priorityChip: {
-    flex: 1,
-    minHeight: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 13,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  priorityChipSelected: {
-    backgroundColor: theme.colors.surfaceMuted,
-    borderColor: theme.colors.text,
-  },
-  priorityText: {
-    fontFamily: typography.semibold,
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    textTransform: 'capitalize',
-  },
-  priorityTextSelected: { color: theme.colors.text },
-  saveButton: {
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    borderRadius: 16,
-    backgroundColor: theme.colors.primary,
-  },
-  saveButtonText: {
-    fontFamily: typography.semibold,
-    fontSize: 14,
-    color: theme.colors.primaryText,
-  },
-  disabledButton: { opacity: 0.55 },
-  deleteButton: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.sm,
-  },
-  deleteText: {
-    fontFamily: typography.semibold,
-    fontSize: 13,
-    color: theme.colors.error,
-  },
+  itemTitle: { fontFamily: typography.semibold, fontSize: 14, color: theme.colors.text },
+  itemMeta: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textSecondary, marginTop: 2 },
+  modalOverlay: { flex: 1, backgroundColor: theme.colors.overlay, justifyContent: 'flex-end' },
+  modalSheet: { maxHeight: '90%', backgroundColor: theme.colors.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingHorizontal: layout.screenPadding, paddingBottom: spacing.xxl },
+  modalHandle: { width: 42, height: 4, borderRadius: radius.pill, backgroundColor: theme.colors.border, alignSelf: 'center', marginTop: spacing.sm, marginBottom: spacing.md },
+  modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.md, marginBottom: spacing.lg },
+  modalHeaderCopy: { flex: 1 },
+  modalEyebrow: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 0.8, color: theme.colors.primary },
+  modalTitle: { fontFamily: typography.bold, fontSize: 22, color: theme.colors.text, marginTop: 2 },
+  typeRow: { flexDirection: 'row', gap: spacing.xs, marginBottom: spacing.xl },
+  typeChip: { flex: 1, minHeight: 50, borderRadius: radius.md, borderWidth: 1, borderColor: theme.colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs },
+  typeChipSelected: { borderColor: theme.colors.primary },
+  typeText: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.textSecondary },
+  typeTextSelected: { color: theme.colors.primary },
+  fieldLabel: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary, marginBottom: spacing.xs, marginTop: spacing.sm },
+  input: { minHeight: 52, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, fontFamily: typography.regular, fontSize: 14, color: theme.colors.text, backgroundColor: theme.colors.input },
+  subjectRow: { gap: spacing.xs, paddingBottom: spacing.sm },
+  subjectChip: { minHeight: 40, paddingHorizontal: spacing.md, borderRadius: radius.pill, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  subjectChipSelected: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primarySoft },
+  subjectText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary },
+  subjectTextSelected: { color: theme.colors.primary },
+  helper: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textMuted, marginBottom: spacing.sm },
+  timeRow: { flexDirection: 'row', gap: spacing.sm },
+  timeField: { flex: 1, minHeight: 62, borderWidth: 1, borderColor: theme.colors.border, borderRadius: radius.md, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  timeFieldLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary },
+  timeFieldValue: { fontFamily: typography.semibold, fontSize: 14, color: theme.colors.text, marginTop: 1 },
+  saveButton: { marginTop: spacing.xl },
+  deleteButton: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  deleteText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.error },
 });
