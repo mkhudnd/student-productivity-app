@@ -6,13 +6,12 @@ import {
   StatusBar,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import { layout, spacing, typography } from '../theme/designSystem';
+import { AppIcon, IconButton } from './ui';
 
 export default function ScreenLayout({
   children,
@@ -50,18 +49,13 @@ export default function ScreenLayout({
       <View style={[styles.header, headerStyle]}>
         <View style={styles.headerSide}>
           {showBackButton ? (
-            <TouchableOpacity
-              style={styles.headerButton}
+            <IconButton
+              icon="chevron-back"
               onPress={handleBackPress}
-              accessibilityRole="button"
               accessibilityLabel="Go back"
-            >
-              <Ionicons name="chevron-back" size={22} color={theme.colors.text} />
-            </TouchableOpacity>
+            />
           ) : headerIcon ? (
-            <View style={styles.headerIconContainer}>
-              <Ionicons name={headerIcon} size={20} color={theme.colors.primary} />
-            </View>
+            <AppIcon name={headerIcon} size={21} color={theme.colors.primary} />
           ) : null}
         </View>
 
@@ -144,20 +138,6 @@ const getStyles = (theme) => StyleSheet.create({
   },
   headerSideRight: {
     alignItems: 'flex-end',
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIconContainer: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    backgroundColor: theme.colors.primarySoft,
   },
   headerTitle: {
     flex: 1,
