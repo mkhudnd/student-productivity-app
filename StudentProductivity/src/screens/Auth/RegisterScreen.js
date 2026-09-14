@@ -1,28 +1,48 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Dimensions, Modal } from 'react-native';
+import {
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { readJson, writeJson } from '../../storage/fileStorage';
 import { useUser } from '../../context/UserContext';
 import { useTheme } from '../../context/ThemeContext';
-import ScreenLayout from '../../components/ScreenLayout';
+import {
+  AuthError,
+  AuthField,
+  AuthScaffold,
+  PasswordRequirements,
+  PrimaryButton,
+} from '../../components/AuthScaffold';
+import { radius, shadow, spacing, typography } from '../../theme/designSystem';
 
-const { width } = Dimensions.get('window');
-
-// Security questions for account recovery
 const SECURITY_QUESTIONS = [
-  "What was the name of your first pet?",
-  "What city were you born in?",
+  'What was the name of your first pet?',
+  'What city were you born in?',
   "What is your mother's maiden name?",
-  "What was the name of your elementary school?",
-  "What is your favorite book?",
-  "What was your childhood nickname?",
-  "What is the name of your favorite teacher?",
-  "What street did you live on in third grade?",
+  'What was the name of your elementary school?',
+  'What is your favorite book?',
+  'What was your childhood nickname?',
+  'What is the name of your favorite teacher?',
+  'What street did you live on in third grade?',
 ];
 
-// RegisterScreen allows users to create a new account stored in users.json
+const PASSWORD_REQUIREMENTS = [
+  { label: '8+ characters', test: (value) => value.length >= 8 },
+  { label: 'Uppercase letter', test: (value) => /[A-Z]/.test(value) },
+  { label: 'Lowercase letter', test: (value) => /[a-z]/.test(value) },
+  { label: 'Number', test: (value) => /[0-9]/.test(value) },
+  { label: 'Special character', test: (value) => /[^A-Za-z0-9]/.test(value) },
+];
+
 export default function RegisterScreen({ navigation }) {
   const { theme } = useTheme();
+  const { loginUser } = useUser();
+  const styles = getStyles(theme);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -31,693 +51,448 @@ export default function RegisterScreen({ navigation }) {
   const [securityAnswer, setSecurityAnswer] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [showQuestionModal, setShowQuestionModal] = useState(false);
-  const { loginUser } = useUser();
-  const styles = getStyles(theme);
 
-  // Password requirements checkers
-  const passwordRequirements = [
-    {
-      label: 'At least 8 characters',
-      test: (pw) => pw.length >= 8,
-    },
-    {
-      label: 'One uppercase letter',
-      test: (pw) => /[A-Z]/.test(pw),
-    },
-    {
-      label: 'One lowercase letter',
-      test: (pw) => /[a-z]/.test(pw),
-    },
-    {
-      label: 'One number',
-      test: (pw) => /[0-9]/.test(pw),
-    },
-    {
-      label: 'One special character',
-      test: (pw) => /[^A-Za-z0-9]/.test(pw),
-    },
-  ];
-
-  // Handle register button press
   const handleRegister = async () => {
+    const normalizedUsername = username.trim();
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedAnswer = securityAnswer.trim();
     setError('');
-    setIsLoading(true);
-    
-    if (!username || !email || !password || !confirmPassword || !securityAnswer) {
-      setError('Please fill in all fields.');
-      setIsLoading(false);
-      return;
-    }
-    
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      setIsLoading(false);
-      return;
-    }
-    
-    if (!agreeTerms) {
-      setError('You must agree to the terms and conditions.');
-      setIsLoading(false);
-      return;
-    }
-    
-    if (securityAnswer.trim().length < 3) {
-      setError('Security answer must be at least 3 characters long.');
-      setIsLoading(false);
+
+    if (!normalizedUsername || !normalizedEmail || !password || !confirmPassword || !normalizedAnswer) {
+      setError('Complete every field before creating the account.');
       return;
     }
 
-    // Check password requirements
-    const unmetRequirements = passwordRequirements.filter(req => !req.test(password));
-    if (unmetRequirements.length > 0) {
-      setError('Password does not meet all requirements.');
-      setIsLoading(false);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Enter a valid email address.');
       return;
     }
-    
+
+    if (normalizedUsername.length < 3) {
+      setError('Username must be at least 3 characters.');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('The two passwords do not match.');
+      return;
+    }
+
+    if (PASSWORD_REQUIREMENTS.some((requirement) => !requirement.test(password))) {
+      setError('Your password still misses one or more requirements.');
+      return;
+    }
+
+    if (normalizedAnswer.length < 3) {
+      setError('Security answer must be at least 3 characters.');
+      return;
+    }
+
+    if (!agreeTerms) {
+      setError('Accept the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      // Check for duplicate username/email
       const users = (await readJson('users.json')) || [];
-      
-      if (users.some(u => u.email === email)) {
-        setError('Email already registered.');
-        setIsLoading(false);
+      const duplicateEmail = users.some(
+        (user) => String(user.email || '').trim().toLowerCase() === normalizedEmail,
+      );
+      const duplicateUsername = users.some(
+        (user) => String(user.username || user.name || '').trim().toLowerCase() === normalizedUsername.toLowerCase(),
+      );
+
+      if (duplicateEmail) {
+        setError('An account already uses this email address.');
         return;
       }
-      
-      if (users.some(u => u.username === username)) {
-        setError('Username already taken.');
-        setIsLoading(false);
+
+      if (duplicateUsername) {
+        setError('That username is already in use.');
         return;
       }
-      
-      // Add new user
-      const newUser = { 
-        username, 
-        email, 
+
+      const newUser = {
+        username: normalizedUsername,
+        email: normalizedEmail,
         password,
         securityQuestion,
-        securityAnswer: securityAnswer.trim(),
+        securityAnswer: normalizedAnswer,
         createdAt: new Date().toISOString(),
       };
-      
+
       users.push(newUser);
       await writeJson('users.json', users);
-      
-      // Automatically login the new user
       await loginUser(newUser);
-      Alert.alert('Welcome!', 'Registration successful!');
-      navigation.replace('MainTabs', { screen: 'Home' });
-    } catch (error) {
-      setError('An error occurred during registration. Please try again.');
-      console.error('Registration error:', error);
+      navigation.replace('MainTabs');
+    } catch (registerError) {
+      console.error('Registration error:', registerError);
+      setError('Account creation failed. Try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <ScreenLayout
-      scrollable={true}
-      keyboardAvoidingView={true}
-      contentContainerStyle={styles.scrollContent}
-      verticalPadding={false}
-      horizontalPadding={false}
-      navigation={navigation}
+  const passwordToggle = (
+    <TouchableOpacity
+      style={styles.iconButton}
+      onPress={() => setShowPassword((value) => !value)}
+      accessibilityRole="button"
+      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
     >
-      {/* Header Section */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back-outline" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        
-        <View style={styles.logoContainer}>
-          <Ionicons name="school" size={48} color={theme.colors.primary} />
-        </View>
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Join us and start your learning journey</Text>
-      </View>
+      <Ionicons
+        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+        size={20}
+        color={theme.colors.textSecondary}
+      />
+    </TouchableOpacity>
+  );
 
-          {/* Registration Form */}
-          <View style={styles.formContainer}>
-            {/* Basic Information */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Basic Information</Text>
-              
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Username</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Choose a username"
-                    value={username}
-                    onChangeText={setUsername}
-                    placeholderTextColor={theme.colors.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-              </View>
-
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="mail-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholderTextColor={theme.colors.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="email-address"
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Password Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Security</Text>
-              
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Create a strong password"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!showPassword}
-                    placeholderTextColor={theme.colors.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity 
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(!showPassword)}
-                  >
-                    <Ionicons 
-                      name={showPassword ? "eye-outline" : "eye-off-outline"} 
-                      size={20} 
-                      color={theme.colors.textSecondary} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Password requirements */}
-              <View style={styles.requirementsContainer}>
-                <Text style={styles.requirementsTitle}>Password Requirements</Text>
-                {passwordRequirements.map((req, idx) => {
-                  const met = req.test(password);
-                  return (
-                    <View key={idx} style={styles.requirementRow}>
-                      <Ionicons 
-                        name={met ? "checkmark-circle" : "ellipse-outline"} 
-                        size={16} 
-                        color={met ? '#4CAF50' : theme.colors.textSecondary} 
-                      />
-                      <Text style={[styles.requirementText, { color: met ? '#4CAF50' : theme.colors.textSecondary }]}>
-                        {req.label}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Confirm Password</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="lock-closed-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Confirm your password"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry={!showPassword}
-                    placeholderTextColor={theme.colors.textSecondary}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Security Question Section */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Account Recovery</Text>
-              <Text style={styles.sectionSubtitle}>Choose a security question to help recover your account</Text>
-              
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Security Question</Text>
-                <TouchableOpacity 
-                  style={styles.questionSelector}
-                  onPress={() => setShowQuestionModal(true)}
-                >
-                  <Ionicons name="help-circle-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <Text style={styles.questionText} numberOfLines={2}>
-                    {securityQuestion}
-                  </Text>
-                  <Ionicons name="chevron-down-outline" size={20} color={theme.colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-              
-              <View style={styles.inputSection}>
-                <Text style={styles.inputLabel}>Your Answer</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="chatbubble-outline" size={20} color={theme.colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your answer"
-                    value={securityAnswer}
-                    onChangeText={setSecurityAnswer}
-                    placeholderTextColor={theme.colors.textSecondary}
-                    autoCapitalize="words"
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Terms Agreement */}
-            <TouchableOpacity 
-              style={styles.termsContainer}
-              onPress={() => setAgreeTerms(!agreeTerms)}
-            >
-              <Ionicons 
-                name={agreeTerms ? "checkbox" : "square-outline"} 
-                size={24} 
-                color={agreeTerms ? theme.colors.primary : theme.colors.textSecondary} 
-              />
-              <Text style={styles.termsText}>
-                I agree to the Terms of Service and Privacy Policy
-              </Text>
-            </TouchableOpacity>
-
-            {error ? (
-              <View style={styles.errorContainer}>
-                <Ionicons name="alert-circle-outline" size={16} color="#F44336" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            <TouchableOpacity 
-              style={[styles.registerButton, isLoading && styles.registerButtonDisabled]} 
-              onPress={handleRegister}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <View style={styles.loadingRow}>
-                  <Ionicons name="hourglass-outline" size={20} color={theme.colors.background} />
-                  <Text style={styles.registerButtonText}>Creating Account...</Text>
-                </View>
-              ) : (
-                <View style={styles.buttonRow}>
-                  <Ionicons name="person-add-outline" size={20} color={theme.colors.background} />
-                  <Text style={styles.registerButtonText}>Create Account</Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          {/* Footer */}
-          <View style={styles.footer}>
+  return (
+    <>
+      <AuthScaffold
+        navigation={navigation}
+        showBack
+        icon="person-add-outline"
+        title="Create your account"
+        subtitle="Set up a local study workspace that keeps your plans, sessions and learning tools together."
+        footer={(
+          <View style={styles.footerRow}>
             <Text style={styles.footerText}>Already have an account?</Text>
-            <TouchableOpacity 
-              style={styles.loginButton}
-              onPress={() => navigation.navigate('Login')}
-            >
-              <Text style={styles.loginButtonText}>Sign In</Text>
-              <Ionicons name="arrow-forward-outline" size={16} color={theme.colors.primary} />
+            <TouchableOpacity onPress={() => navigation.navigate('Login')} accessibilityRole="button">
+              <Text style={styles.footerLink}>Sign in</Text>
             </TouchableOpacity>
           </View>
+        )}
+      >
+        <View style={styles.sectionHeading}>
+          <Text style={styles.sectionTitle}>Account details</Text>
+          <Text style={styles.sectionSubtitle}>You can change your profile details later.</Text>
+        </View>
 
-      {/* Security Question Selection Modal */}
+        <AuthField
+          label="Username"
+          icon="person-outline"
+          value={username}
+          onChangeText={setUsername}
+          placeholder="Choose a username"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!isLoading}
+        />
+
+        <AuthField
+          label="Email"
+          icon="mail-outline"
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!isLoading}
+        />
+
+        <View style={styles.divider} />
+        <Text style={styles.groupLabel}>Secure the account</Text>
+
+        <AuthField
+          label="Password"
+          icon="lock-closed-outline"
+          value={password}
+          onChangeText={setPassword}
+          placeholder="Create a strong password"
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!isLoading}
+          right={passwordToggle}
+        />
+
+        {password.length > 0 ? (
+          <PasswordRequirements password={password} requirements={PASSWORD_REQUIREMENTS} />
+        ) : null}
+
+        <AuthField
+          label="Confirm password"
+          icon="checkmark-circle-outline"
+          value={confirmPassword}
+          onChangeText={setConfirmPassword}
+          placeholder="Repeat your password"
+          secureTextEntry={!showPassword}
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!isLoading}
+        />
+
+        <TouchableOpacity
+          style={styles.selector}
+          onPress={() => setShowQuestionModal(true)}
+          disabled={isLoading}
+          accessibilityRole="button"
+        >
+          <View style={styles.selectorIcon}>
+            <Ionicons name="shield-checkmark-outline" size={19} color={theme.colors.primary} />
+          </View>
+          <View style={styles.selectorCopy}>
+            <Text style={styles.selectorLabel}>Recovery question</Text>
+            <Text style={styles.selectorValue}>{securityQuestion}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={19} color={theme.colors.textMuted} />
+        </TouchableOpacity>
+
+        <AuthField
+          label="Recovery answer"
+          icon="chatbubble-ellipses-outline"
+          value={securityAnswer}
+          onChangeText={setSecurityAnswer}
+          placeholder="Enter an answer you will remember"
+          autoCapitalize="sentences"
+          editable={!isLoading}
+          helper="This prototype stores recovery information locally on the device."
+        />
+
+        <TouchableOpacity
+          style={styles.termsRow}
+          onPress={() => setAgreeTerms((value) => !value)}
+          disabled={isLoading}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: agreeTerms }}
+        >
+          <Ionicons
+            name={agreeTerms ? 'checkbox' : 'square-outline'}
+            size={23}
+            color={agreeTerms ? theme.colors.primary : theme.colors.textMuted}
+          />
+          <Text style={styles.termsText}>I agree to the Terms of Service and Privacy Policy.</Text>
+        </TouchableOpacity>
+
+        <AuthError message={error} />
+
+        <PrimaryButton
+          label="Create account"
+          icon="arrow-forward-outline"
+          onPress={handleRegister}
+          loading={isLoading}
+        />
+      </AuthScaffold>
+
       <Modal
-        animationType="slide"
-        transparent={true}
         visible={showQuestionModal}
+        transparent
+        animationType="fade"
         onRequestClose={() => setShowQuestionModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Choose Security Question</Text>
-              <TouchableOpacity 
-                style={styles.modalCloseButton}
+              <View>
+                <Text style={styles.modalTitle}>Recovery question</Text>
+                <Text style={styles.modalSubtitle}>Choose one you can answer later.</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalClose}
                 onPress={() => setShowQuestionModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
               >
-                <Ionicons name="close-outline" size={24} color={theme.colors.textSecondary} />
+                <Ionicons name="close" size={21} color={theme.colors.text} />
               </TouchableOpacity>
             </View>
-            
-            <ScrollView style={styles.questionsList} showsVerticalScrollIndicator={false}>
-              {SECURITY_QUESTIONS.map((question, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.questionOption,
-                    securityQuestion === question && styles.questionOptionSelected
-                  ]}
-                  onPress={() => {
-                    setSecurityQuestion(question);
-                    setShowQuestionModal(false);
-                  }}
-                >
-                  <Text style={[
-                    styles.questionOptionText,
-                    securityQuestion === question && styles.questionOptionTextSelected
-                  ]}>
-                    {question}
-                  </Text>
-                  {securityQuestion === question && (
-                    <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {SECURITY_QUESTIONS.map((question) => {
+                const selected = question === securityQuestion;
+                return (
+                  <TouchableOpacity
+                    key={question}
+                    style={[styles.questionRow, selected && styles.questionRowSelected]}
+                    onPress={() => {
+                      setSecurityQuestion(question);
+                      setShowQuestionModal(false);
+                    }}
+                  >
+                    <Text style={[styles.questionText, selected && styles.questionTextSelected]}>
+                      {question}
+                    </Text>
+                    {selected ? (
+                      <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </ScreenLayout>
+    </>
   );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: theme.colors.background 
-  },
-  keyboardView: { 
-    flex: 1 
-  },
-  scrollContent: { 
-    flexGrow: 1,
-    padding: 24,
-  },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
-    position: 'relative',
-  },
-  backButton: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: theme.colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: theme.colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 24,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: theme.colors.text,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  formContainer: {
-    backgroundColor: theme.colors.card,
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 32,
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  section: {
-    marginBottom: 24,
+  sectionHeading: {
+    marginBottom: spacing.xl,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.title,
+    lineHeight: typography.lineHeights.title,
     color: theme.colors.text,
-    marginBottom: 8,
   },
   sectionSubtitle: {
-    fontSize: 14,
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    lineHeight: typography.lineHeights.bodySmall,
     color: theme.colors.textSecondary,
-    marginBottom: 16,
-    lineHeight: 20,
+    marginTop: spacing.xxs,
   },
-  inputSection: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+  groupLabel: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.titleSmall,
     color: theme.colors.text,
-    marginBottom: 8,
+    marginBottom: spacing.lg,
   },
-  inputWrapper: {
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.separator,
+    marginVertical: spacing.xs,
+    marginBottom: spacing.xl,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
+    gap: spacing.sm,
+    padding: spacing.md,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: theme.colors.background,
-    paddingHorizontal: 16,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.input,
+    marginBottom: spacing.lg,
   },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: theme.colors.text,
-    paddingVertical: 16,
-  },
-  eyeIcon: {
-    padding: 4,
-  },
-  pickerWrapper: {
-    flexDirection: 'row',
+  selectorIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
     alignItems: 'center',
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.background,
-    paddingHorizontal: 8,
-    minHeight: 56,
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primarySoft,
   },
-  picker: {
-    flex: 1,
-    height: 56,
-    color: theme.colors.text,
-    marginLeft: 4,
-  },
-  requirementsContainer: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    padding: 16,
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  requirementsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.colors.text,
-    marginBottom: 12,
-  },
-  requirementRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    gap: 8,
-  },
-  requirementText: {
-    fontSize: 14,
+  selectorCopy: {
     flex: 1,
   },
-  termsContainer: {
+  selectorLabel: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.caption,
+    color: theme.colors.textSecondary,
+  },
+  selectorValue: {
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    lineHeight: typography.lineHeights.bodySmall,
+    color: theme.colors.text,
+    marginTop: 2,
+  },
+  termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    padding: 16,
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   termsText: {
-    fontSize: 14,
-    color: theme.colors.text,
     flex: 1,
-    lineHeight: 20,
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    lineHeight: typography.lineHeights.bodySmall,
+    color: theme.colors.textSecondary,
   },
-  errorContainer: {
+  footerRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 20,
-  },
-  errorText: {
-    color: '#F44336',
-    fontSize: 14,
-    marginLeft: 8,
-    flex: 1,
-  },
-  registerButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: theme.colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  registerButtonDisabled: {
-    opacity: 0.7,
-  },
-  buttonRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  registerButtonText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: theme.colors.background,
-  },
-  footer: {
-    alignItems: 'center',
-    gap: 16,
+    gap: spacing.xs,
+    flexWrap: 'wrap',
   },
   footerText: {
-    fontSize: 16,
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
     color: theme.colors.textSecondary,
-    textAlign: 'center',
   },
-  loginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.card,
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    gap: 8,
-    borderWidth: 2,
-    borderColor: theme.colors.primary,
-  },
-  loginButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
+  footerLink: {
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.bodySmall,
     color: theme.colors.primary,
   },
-  questionSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.background,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.background,
-    paddingHorizontal: 16,
-    minHeight: 56,
-  },
-  questionText: {
+  modalBackdrop: {
     flex: 1,
-    fontSize: 16,
-    color: theme.colors.text,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
+    justifyContent: 'flex-end',
+    backgroundColor: theme.colors.overlay,
   },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  },
-  modalContent: {
-    backgroundColor: theme.colors.card,
-    padding: 20,
-    borderRadius: 20,
-    width: '90%',
-    maxHeight: '80%',
-    shadowColor: theme.colors.text,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+  modalCard: {
+    maxHeight: '78%',
+    backgroundColor: theme.colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.xl,
+    ...shadow.card,
   },
   modalHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    width: '100%',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
+    gap: spacing.md,
   },
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: typography.semibold,
+    fontSize: typography.sizes.title,
     color: theme.colors.text,
   },
-  modalCloseButton: {
-    padding: 4,
+  modalSubtitle: {
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    color: theme.colors.textSecondary,
+    marginTop: spacing.xxs,
   },
-  questionsList: {
-    width: '100%',
+  modalClose: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceMuted,
   },
-  questionOption: {
+  questionRow: {
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.background,
-    borderRadius: 8,
-    marginBottom: 8,
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    marginBottom: spacing.xs,
   },
-  questionOptionSelected: {
-    backgroundColor: theme.colors.background,
+  questionRowSelected: {
+    backgroundColor: theme.colors.primarySoft,
   },
-  questionOptionText: {
+  questionText: {
     flex: 1,
-    fontSize: 16,
+    fontFamily: typography.regular,
+    fontSize: typography.sizes.bodySmall,
+    lineHeight: typography.lineHeights.bodySmall,
     color: theme.colors.text,
   },
-  questionOptionTextSelected: {
-    fontWeight: 'bold',
+  questionTextSelected: {
+    fontFamily: typography.semibold,
+    color: theme.colors.primary,
   },
-}); 
+});
