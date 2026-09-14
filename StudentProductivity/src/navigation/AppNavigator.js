@@ -6,11 +6,11 @@ import {
 } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useUser } from '../context/UserContext';
-import { radius, shadow, typography } from '../theme/designSystem';
+import { shadow, typography } from '../theme/designSystem';
+import { AppIcon } from '../components/ui';
 import NavigationSessionTracker from '../components/NavigationSessionTracker';
 
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -62,9 +62,7 @@ function MainTabs() {
             paddingTop: 6,
             ...shadow.card,
           },
-          tabBarItemStyle: {
-            paddingTop: 1,
-          },
+          tabBarItemStyle: { paddingTop: 1 },
           tabBarActiveTintColor: theme.colors.tabActive,
           tabBarInactiveTintColor: theme.colors.tabInactive,
           tabBarLabel: presentation.label,
@@ -74,23 +72,11 @@ function MainTabs() {
             marginTop: 1,
           },
           tabBarIcon: ({ color, focused }) => (
-            <View
-              style={{
-                minWidth: 38,
-                height: 30,
-                paddingHorizontal: 8,
-                borderRadius: radius.pill,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: focused ? theme.colors.primarySoft : 'transparent',
-              }}
-            >
-              <Ionicons
-                name={focused ? presentation.activeIcon : presentation.icon}
-                size={20}
-                color={color}
-              />
-            </View>
+            <AppIcon
+              name={focused ? presentation.activeIcon : presentation.icon}
+              size={21}
+              color={color}
+            />
           ),
         };
       }}
@@ -107,20 +93,14 @@ function MainTabs() {
 function AuthNavigationSynchronizer({ currentUser, isLoading }) {
   useEffect(() => {
     if (isLoading || !navigationRef.isReady()) return;
-
     const state = navigationRef.getRootState();
     const activeRoute = state?.routes?.[state.index ?? 0]?.name;
     const isAuthRoute = ['Login', 'Register', 'ForgotPassword'].includes(activeRoute);
     const needsReset = currentUser ? isAuthRoute : !isAuthRoute;
-
     if (needsReset) {
-      navigationRef.reset({
-        index: 0,
-        routes: [{ name: currentUser ? 'MainTabs' : 'Login' }],
-      });
+      navigationRef.reset({ index: 0, routes: [{ name: currentUser ? 'MainTabs' : 'Login' }] });
     }
   }, [currentUser, isLoading]);
-
   return null;
 }
 
@@ -130,14 +110,7 @@ export default function AppNavigator() {
 
   if (isLoading) {
     return (
-      <View
-        style={{
-          flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: theme.colors.background,
-        }}
-      >
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background }}>
         <ActivityIndicator size="large" color={theme.colors.primary} />
       </View>
     );
@@ -147,10 +120,7 @@ export default function AppNavigator() {
     <NavigationContainer ref={navigationRef}>
       <NavigationSessionTracker />
       <AuthNavigationSynchronizer currentUser={currentUser} isLoading={isLoading} />
-      <AppStack.Navigator
-        initialRouteName={currentUser ? 'MainTabs' : 'Login'}
-        screenOptions={{ headerShown: false }}
-      >
+      <AppStack.Navigator initialRouteName={currentUser ? 'MainTabs' : 'Login'} screenOptions={{ headerShown: false }}>
         <AppStack.Screen name="Login" component={LoginScreen} />
         <AppStack.Screen name="Register" component={RegisterScreen} />
         <AppStack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
