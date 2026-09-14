@@ -1,0 +1,41 @@
+name: Sync Lucide lockfile
+
+on:
+  push:
+    branches:
+      - v2-consistent-redesign
+    paths:
+      - StudentProductivity/package.json
+
+permissions:
+  contents: write
+
+jobs:
+  sync-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: v2-consistent-redesign
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sync package lock
+        working-directory: StudentProductivity
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Commit lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add StudentProductivity/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already in sync."
+            exit 0
+          fi
+          git commit -m "chore: sync Lucide package lock [skip ci]"
+          git push origin HEAD:v2-consistent-redesign
