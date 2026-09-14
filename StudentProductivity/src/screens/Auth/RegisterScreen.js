@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { readJson, writeJson } from '../../storage/fileStorage';
 import { useUser } from '../../context/UserContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -18,7 +17,8 @@ import {
   PasswordRequirements,
   PrimaryButton,
 } from '../../components/AuthScaffold';
-import { radius, shadow, spacing, typography } from '../../theme/designSystem';
+import { AppIcon, IconButton } from '../../components/ui';
+import { layout, radius, spacing, typography } from '../../theme/designSystem';
 
 const SECURITY_QUESTIONS = [
   'What was the name of your first pet?',
@@ -65,32 +65,26 @@ export default function RegisterScreen({ navigation }) {
       setError('Complete every field before creating the account.');
       return;
     }
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
       setError('Enter a valid email address.');
       return;
     }
-
     if (normalizedUsername.length < 3) {
       setError('Username must be at least 3 characters.');
       return;
     }
-
     if (password !== confirmPassword) {
       setError('The two passwords do not match.');
       return;
     }
-
     if (PASSWORD_REQUIREMENTS.some((requirement) => !requirement.test(password))) {
       setError('Your password still misses one or more requirements.');
       return;
     }
-
     if (normalizedAnswer.length < 3) {
       setError('Security answer must be at least 3 characters.');
       return;
     }
-
     if (!agreeTerms) {
       setError('Accept the Terms of Service and Privacy Policy to continue.');
       return;
@@ -99,18 +93,13 @@ export default function RegisterScreen({ navigation }) {
     setIsLoading(true);
     try {
       const users = (await readJson('users.json')) || [];
-      const duplicateEmail = users.some(
-        (user) => String(user.email || '').trim().toLowerCase() === normalizedEmail,
-      );
-      const duplicateUsername = users.some(
-        (user) => String(user.username || user.name || '').trim().toLowerCase() === normalizedUsername.toLowerCase(),
-      );
+      const duplicateEmail = users.some((user) => String(user.email || '').trim().toLowerCase() === normalizedEmail);
+      const duplicateUsername = users.some((user) => String(user.username || user.name || '').trim().toLowerCase() === normalizedUsername.toLowerCase());
 
       if (duplicateEmail) {
         setError('An account already uses this email address.');
         return;
       }
-
       if (duplicateUsername) {
         setError('That username is already in use.');
         return;
@@ -137,21 +126,6 @@ export default function RegisterScreen({ navigation }) {
     }
   };
 
-  const passwordToggle = (
-    <TouchableOpacity
-      style={styles.iconButton}
-      onPress={() => setShowPassword((value) => !value)}
-      accessibilityRole="button"
-      accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
-    >
-      <Ionicons
-        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-        size={20}
-        color={theme.colors.textSecondary}
-      />
-    </TouchableOpacity>
-  );
-
   return (
     <>
       <AuthScaffold
@@ -174,28 +148,8 @@ export default function RegisterScreen({ navigation }) {
           <Text style={styles.sectionSubtitle}>You can change your profile details later.</Text>
         </View>
 
-        <AuthField
-          label="Username"
-          icon="person-outline"
-          value={username}
-          onChangeText={setUsername}
-          placeholder="Choose a username"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isLoading}
-        />
-
-        <AuthField
-          label="Email"
-          icon="mail-outline"
-          value={email}
-          onChangeText={setEmail}
-          placeholder="you@example.com"
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isLoading}
-        />
+        <AuthField label="Username" icon="person-outline" value={username} onChangeText={setUsername} placeholder="Choose a username" autoCapitalize="none" autoCorrect={false} editable={!isLoading} />
+        <AuthField label="Email" icon="mail-outline" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} editable={!isLoading} />
 
         <View style={styles.divider} />
         <Text style={styles.groupLabel}>Secure the account</Text>
@@ -210,39 +164,27 @@ export default function RegisterScreen({ navigation }) {
           autoCapitalize="none"
           autoCorrect={false}
           editable={!isLoading}
-          right={passwordToggle}
+          right={(
+            <IconButton
+              icon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+              size={20}
+              onPress={() => setShowPassword((value) => !value)}
+              accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+            />
+          )}
         />
 
-        {password.length > 0 ? (
-          <PasswordRequirements password={password} requirements={PASSWORD_REQUIREMENTS} />
-        ) : null}
+        {password.length > 0 ? <PasswordRequirements password={password} requirements={PASSWORD_REQUIREMENTS} /> : null}
 
-        <AuthField
-          label="Confirm password"
-          icon="checkmark-circle-outline"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          placeholder="Repeat your password"
-          secureTextEntry={!showPassword}
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!isLoading}
-        />
+        <AuthField label="Confirm password" icon="checkmark-circle-outline" value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Repeat your password" secureTextEntry={!showPassword} autoCapitalize="none" autoCorrect={false} editable={!isLoading} />
 
-        <TouchableOpacity
-          style={styles.selector}
-          onPress={() => setShowQuestionModal(true)}
-          disabled={isLoading}
-          accessibilityRole="button"
-        >
-          <View style={styles.selectorIcon}>
-            <Ionicons name="shield-checkmark-outline" size={19} color={theme.colors.primary} />
-          </View>
+        <TouchableOpacity style={styles.selector} onPress={() => setShowQuestionModal(true)} disabled={isLoading} accessibilityRole="button">
+          <AppIcon name="shield-checkmark-outline" size={20} color={theme.colors.primary} />
           <View style={styles.selectorCopy}>
             <Text style={styles.selectorLabel}>Recovery question</Text>
             <Text style={styles.selectorValue}>{securityQuestion}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={19} color={theme.colors.textMuted} />
+          <AppIcon name="chevron-forward" size={19} color={theme.colors.textMuted} />
         </TouchableOpacity>
 
         <AuthField
@@ -256,52 +198,24 @@ export default function RegisterScreen({ navigation }) {
           helper="This prototype stores recovery information locally on the device."
         />
 
-        <TouchableOpacity
-          style={styles.termsRow}
-          onPress={() => setAgreeTerms((value) => !value)}
-          disabled={isLoading}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: agreeTerms }}
-        >
-          <Ionicons
-            name={agreeTerms ? 'checkbox' : 'square-outline'}
-            size={23}
-            color={agreeTerms ? theme.colors.primary : theme.colors.textMuted}
-          />
+        <TouchableOpacity style={styles.termsRow} onPress={() => setAgreeTerms((value) => !value)} disabled={isLoading} accessibilityRole="checkbox" accessibilityState={{ checked: agreeTerms }}>
+          <AppIcon name={agreeTerms ? 'checkbox' : 'square-outline'} size={23} color={agreeTerms ? theme.colors.primary : theme.colors.textMuted} />
           <Text style={styles.termsText}>I agree to the Terms of Service and Privacy Policy.</Text>
         </TouchableOpacity>
 
         <AuthError message={error} />
-
-        <PrimaryButton
-          label="Create account"
-          icon="arrow-forward-outline"
-          onPress={handleRegister}
-          loading={isLoading}
-        />
+        <PrimaryButton label="Create account" icon="arrow-forward-outline" onPress={handleRegister} loading={isLoading} />
       </AuthScaffold>
 
-      <Modal
-        visible={showQuestionModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowQuestionModal(false)}
-      >
+      <Modal visible={showQuestionModal} transparent animationType="fade" onRequestClose={() => setShowQuestionModal(false)}>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <View>
+              <View style={styles.modalHeaderCopy}>
                 <Text style={styles.modalTitle}>Recovery question</Text>
                 <Text style={styles.modalSubtitle}>Choose one you can answer later.</Text>
               </View>
-              <TouchableOpacity
-                style={styles.modalClose}
-                onPress={() => setShowQuestionModal(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Ionicons name="close" size={21} color={theme.colors.text} />
-              </TouchableOpacity>
+              <IconButton icon="close" onPress={() => setShowQuestionModal(false)} accessibilityLabel="Close" />
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
@@ -316,12 +230,8 @@ export default function RegisterScreen({ navigation }) {
                       setShowQuestionModal(false);
                     }}
                   >
-                    <Text style={[styles.questionText, selected && styles.questionTextSelected]}>
-                      {question}
-                    </Text>
-                    {selected ? (
-                      <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} />
-                    ) : null}
+                    <Text style={[styles.questionText, selected && styles.questionTextSelected]}>{question}</Text>
+                    {selected ? <AppIcon name="checkmark" size={18} color={theme.colors.primary} /> : null}
                   </TouchableOpacity>
                 );
               })}
@@ -334,9 +244,7 @@ export default function RegisterScreen({ navigation }) {
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  sectionHeading: {
-    marginBottom: spacing.xl,
-  },
+  sectionHeading: { marginBottom: spacing.xl },
   sectionTitle: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.title,
@@ -357,16 +265,10 @@ const getStyles = (theme) => StyleSheet.create({
     marginBottom: spacing.lg,
   },
   divider: {
-    height: 1,
+    height: StyleSheet.hairlineWidth,
     backgroundColor: theme.colors.separator,
     marginVertical: spacing.xs,
     marginBottom: spacing.xl,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   selector: {
     flexDirection: 'row',
@@ -379,17 +281,7 @@ const getStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.colors.input,
     marginBottom: spacing.lg,
   },
-  selectorIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.primarySoft,
-  },
-  selectorCopy: {
-    flex: 1,
-  },
+  selectorCopy: { flex: 1 },
   selectorLabel: {
     fontFamily: typography.semibold,
     fontSize: typography.sizes.caption,
@@ -434,61 +326,52 @@ const getStyles = (theme) => StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    justifyContent: 'flex-end',
     backgroundColor: theme.colors.overlay,
+    justifyContent: 'center',
+    padding: layout.screenPadding,
   },
   modalCard: {
-    maxHeight: '78%',
+    maxHeight: '76%',
     backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.xl,
-    ...shadow.card,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: spacing.lg,
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
     gap: spacing.md,
+    marginBottom: spacing.lg,
   },
+  modalHeaderCopy: { flex: 1 },
   modalTitle: {
-    fontFamily: typography.semibold,
-    fontSize: typography.sizes.title,
+    fontFamily: typography.bold,
+    fontSize: 20,
     color: theme.colors.text,
   },
   modalSubtitle: {
     fontFamily: typography.regular,
-    fontSize: typography.sizes.bodySmall,
+    fontSize: 11,
     color: theme.colors.textSecondary,
-    marginTop: spacing.xxs,
-  },
-  modalClose: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceMuted,
+    marginTop: 2,
   },
   questionRow: {
-    minHeight: 56,
+    minHeight: 58,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: radius.md,
-    marginBottom: spacing.xs,
+    gap: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.separator,
   },
   questionRowSelected: {
-    backgroundColor: theme.colors.primarySoft,
+    borderColor: theme.colors.primary,
   },
   questionText: {
     flex: 1,
     fontFamily: typography.regular,
-    fontSize: typography.sizes.bodySmall,
-    lineHeight: typography.lineHeights.bodySmall,
+    fontSize: 12,
+    lineHeight: 18,
     color: theme.colors.text,
   },
   questionTextSelected: {
