@@ -1,11 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  ActivityIndicator,
+  Animated,
+  PanResponder,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
 import { FlashcardService } from '../../utils/flashcardService';
 import { localDateKey } from '../../utils/planRepository';
 import ScreenLayout from '../../components/ScreenLayout';
+import {
+  AppIcon,
+  Card,
+  PrimaryButton,
+  ProgressBar,
+  SecondaryButton,
+} from '../../components/ui';
+import { radius, spacing, typography } from '../../theme/designSystem';
 
 function getDueCards(deck) {
   const today = localDateKey();
@@ -32,7 +48,6 @@ function updateSRS(card, correct) {
     repetitions = 0;
     interval = 1;
   }
-
   const nextDue = new Date();
   nextDue.setDate(nextDue.getDate() + interval);
   return {
@@ -62,11 +77,9 @@ export default function StudyScreen({ route, navigation }) {
   const [isCorrect, setIsCorrect] = useState(null);
   const [sessionComplete, setSessionComplete] = useState(false);
   const [revisionMode, setRevisionMode] = useState(false);
-  const [timeLimit, setTimeLimit] = useState(60);
   const [timeRemaining, setTimeRemaining] = useState(60);
   const [timerActive, setTimerActive] = useState(false);
   const [showTimerSetup, setShowTimerSetup] = useState(false);
-  const [useCustomTime, setUseCustomTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState('2');
   const [customSeconds, setCustomSeconds] = useState('0');
   const [sessionStats, setSessionStats] = useState({ correct: 0, incorrect: 0, reviewed: 0 });
@@ -74,9 +87,7 @@ export default function StudyScreen({ route, navigation }) {
   const pan = useRef(new Animated.ValueXY()).current;
   const timerRef = useRef(null);
 
-  useEffect(() => {
-    loadDeck();
-  }, [deckId, currentUser?.email]);
+  useEffect(() => { loadDeck(); }, [deckId, currentUser?.email]);
 
   useEffect(() => {
     setAnswerInput('');
@@ -93,9 +104,7 @@ export default function StudyScreen({ route, navigation }) {
       setTimerActive(false);
       setSessionComplete(true);
     }
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [revisionMode, timerActive, timeRemaining]);
 
   async function loadDeck() {
@@ -103,8 +112,7 @@ export default function StudyScreen({ route, navigation }) {
     try {
       const found = await FlashcardService.getDeck(deckId, currentUser);
       setDeck(found);
-      const initialQueue = found ? (studyAll ? [...(found.cards || [])] : getDueCards(found)) : [];
-      setQueue(initialQueue);
+      setQueue(found ? (studyAll ? [...(found.cards || [])] : getDueCards(found)) : []);
       setIndex(0);
       setSessionComplete(false);
     } finally {
@@ -112,10 +120,9 @@ export default function StudyScreen({ route, navigation }) {
     }
   }
 
-  function beginRevisionMode() {
+  function beginRevisionMode(seconds = null) {
     const customDuration = Math.max(1, Number(customMinutes || 0) * 60 + Number(customSeconds || 0));
-    const duration = useCustomTime ? customDuration : timeLimit;
-    setTimeLimit(duration);
+    const duration = seconds || customDuration;
     setTimeRemaining(duration);
     setTimerActive(true);
     setRevisionMode(true);
@@ -123,16 +130,13 @@ export default function StudyScreen({ route, navigation }) {
     setSessionStats({ correct: 0, incorrect: 0, reviewed: 0 });
   }
 
-  function flipCard() {
-    setShowBack((value) => !value);
-  }
+  function flipCard() { setShowBack((value) => !value); }
 
   function nextCard() {
     if (navigationLocked || queue.length === 0) return;
     setNavigationLocked(true);
-    if (index < queue.length - 1) {
-      setIndex((value) => value + 1);
-    } else {
+    if (index < queue.length - 1) setIndex((value) => value + 1);
+    else {
       setSessionComplete(true);
       setTimerActive(false);
     }
@@ -148,20 +152,14 @@ export default function StudyScreen({ route, navigation }) {
     if (!currentCard || navigationLocked) return;
     setNavigationLocked(true);
     try {
-      const updatedCard = updateSRS(currentCard, correct);
-      const saved = await FlashcardService.updateCard(deckId, currentCard.id, updatedCard, currentUser);
+      const saved = await FlashcardService.updateCard(deckId, currentCard.id, updateSRS(currentCard, correct), currentUser);
       if (!saved) throw new Error('Card update failed.');
-
-      setDeck((current) => ({
-        ...current,
-        cards: (current?.cards || []).map((card) => (card.id === currentCard.id ? saved : card)),
-      }));
+      setDeck((current) => ({ ...current, cards: (current?.cards || []).map((card) => card.id === currentCard.id ? saved : card) }));
       setSessionStats((current) => ({
         reviewed: current.reviewed + 1,
         correct: current.correct + (correct ? 1 : 0),
         incorrect: current.incorrect + (correct ? 0 : 1),
       }));
-
       const nextQueue = queue.filter((card) => card.id !== currentCard.id);
       setQueue(nextQueue);
       if (nextQueue.length === 0) {
@@ -205,271 +203,150 @@ export default function StudyScreen({ route, navigation }) {
   });
 
   if (loading) {
-    return (
-      <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}>
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.centerStateText}>Preparing cards…</Text>
-        </View>
-      </ScreenLayout>
-    );
+    return <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}><View style={styles.centerState}><ActivityIndicator size="large" color={theme.colors.primary} /><Text style={styles.centerText}>Preparing cards…</Text></View></ScreenLayout>;
   }
 
   if (!deck) {
-    return (
-      <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}>
-        <View style={styles.centerState}>
-          <Text style={styles.emptyTitle}>Learning set not found</Text>
-          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.doneButtonText}>Go back</Text>
-          </TouchableOpacity>
-        </View>
-      </ScreenLayout>
-    );
+    return <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}><View style={styles.centerState}><Text style={styles.emptyTitle}>Learning set not found</Text><SecondaryButton label="Go back" onPress={() => navigation.goBack()} /></View></ScreenLayout>;
   }
 
   if (sessionComplete || queue.length === 0) {
     return (
       <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation} scrollable>
-        <View style={styles.completeCard}>
-          <View style={styles.completeIcon}>
-            <Ionicons name="checkmark-circle" size={34} color={theme.colors.accent} />
-          </View>
+        <Card style={styles.completeCard}>
+          <AppIcon name="checkmark-circle-outline" size={34} color={theme.colors.accent} />
           <Text style={styles.completeTitle}>{queue.length === 0 && sessionStats.reviewed === 0 ? 'Nothing due right now' : 'Review complete'}</Text>
-          <Text style={styles.completeText}>
-            {sessionStats.reviewed > 0
-              ? `${sessionStats.correct} correct · ${sessionStats.incorrect} to revisit`
-              : 'You are caught up with this learning set.'}
-          </Text>
+          <Text style={styles.completeText}>{sessionStats.reviewed > 0 ? `${sessionStats.correct} correct · ${sessionStats.incorrect} to revisit` : 'You are caught up with this learning set.'}</Text>
           <View style={styles.completeStats}>
-            <View style={styles.completeStat}>
-              <Text style={styles.completeStatValue}>{progress.percent}%</Text>
-              <Text style={styles.completeStatLabel}>Mastered</Text>
-            </View>
-            <View style={styles.completeStat}>
-              <Text style={styles.completeStatValue}>{deck.cards.length}</Text>
-              <Text style={styles.completeStatLabel}>Cards</Text>
-            </View>
+            <View style={styles.completeStat}><Text style={styles.completeStatValue}>{progress.percent}%</Text><Text style={styles.completeStatLabel}>Mastered</Text></View>
+            <View style={styles.completeStat}><Text style={styles.completeStatValue}>{deck.cards.length}</Text><Text style={styles.completeStatLabel}>Cards</Text></View>
           </View>
-          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.goBack()}>
-            <Text style={styles.doneButtonText}>Done</Text>
-          </TouchableOpacity>
-        </View>
+          <PrimaryButton label="Done" onPress={() => navigation.goBack()} />
+        </Card>
       </ScreenLayout>
     );
   }
 
+  const queueProgress = queue.length ? (index + 1) / queue.length : 0;
+
   return (
-    <ScreenLayout
-      showHeader
-      headerTitle={deck.title}
-      showBackButton
-      navigation={navigation}
-      scrollable
-      contentContainerStyle={styles.content}
-    >
-      <View style={styles.progressHeader}>
-        <Text style={styles.progressLabel}>Card {index + 1} of {queue.length}</Text>
-        <Text style={styles.progressPercent}>{progress.percent}% mastered</Text>
-      </View>
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${queue.length ? ((index + 1) / queue.length) * 100 : 0}%` }]} />
-      </View>
+    <ScreenLayout showHeader headerTitle={deck.title} showBackButton navigation={navigation} scrollable contentContainerStyle={styles.content}>
+      <View style={styles.progressHeader}><Text style={styles.progressLabel}>Card {index + 1} of {queue.length}</Text><Text style={styles.progressPercent}>{progress.percent}% mastered</Text></View>
+      <ProgressBar progress={queueProgress} />
 
       {revisionMode ? (
-        <View style={styles.timerCard}>
-          <Ionicons name="timer-outline" size={20} color={theme.colors.primary} />
-          <View style={styles.timerCopy}>
-            <Text style={styles.timerLabel}>Revision timer</Text>
-            <Text style={styles.timerValue}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text>
-          </View>
-          <TouchableOpacity onPress={() => setTimerActive((value) => !value)}>
-            <Ionicons name={timerActive ? 'pause-circle-outline' : 'play-circle-outline'} size={28} color={theme.colors.primary} />
-          </TouchableOpacity>
-        </View>
+        <Card style={styles.timerCard}>
+          <AppIcon name="timer-outline" size={20} color={theme.colors.primary} />
+          <View style={styles.timerCopy}><Text style={styles.timerLabel}>Revision timer</Text><Text style={styles.timerValue}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text></View>
+          <TouchableOpacity onPress={() => setTimerActive((value) => !value)}><AppIcon name={timerActive ? 'pause-circle-outline' : 'play-circle-outline'} size={28} color={theme.colors.primary} /></TouchableOpacity>
+        </Card>
       ) : (
-        <TouchableOpacity style={styles.revisionLink} onPress={() => setShowTimerSetup(true)}>
-          <Ionicons name="timer-outline" size={18} color={theme.colors.primary} />
-          <Text style={styles.revisionLinkText}>Timed revision mode</Text>
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.revisionLink} onPress={() => setShowTimerSetup((value) => !value)}><AppIcon name="timer-outline" size={18} color={theme.colors.primary} /><Text style={styles.revisionLinkText}>Timed revision mode</Text></TouchableOpacity>
       )}
 
-      <Animated.View style={[styles.flashcard, { transform: [{ translateX: pan.x }] }]} {...panResponder.panHandlers}>
-        <TouchableOpacity style={styles.flashcardTouch} onPress={flipCard} activeOpacity={0.9}>
-          <Text style={styles.faceLabel}>{showBack ? 'ANSWER' : 'QUESTION'}</Text>
-          <Text style={styles.faceText}>{showBack ? currentCard.back : currentCard.front}</Text>
-          <View style={styles.flipHint}>
-            <Ionicons name="sync-outline" size={16} color={theme.colors.textMuted} />
-            <Text style={styles.flipHintText}>Tap to flip</Text>
+      {showTimerSetup ? (
+        <Card style={styles.timerSetupCard}>
+          <Text style={styles.timerSetupTitle}>Timed revision</Text>
+          <Text style={styles.timerSetupText}>Choose a preset or enter a custom total session time.</Text>
+          <View style={styles.presetRow}>
+            {[30, 60, 120].map((seconds) => <TouchableOpacity key={seconds} style={styles.presetButton} onPress={() => beginRevisionMode(seconds)}><Text style={styles.presetText}>{seconds}s</Text></TouchableOpacity>)}
           </View>
-        </TouchableOpacity>
+          <View style={styles.customRow}>
+            <TextInput style={styles.customInput} value={customMinutes} onChangeText={setCustomMinutes} keyboardType="number-pad" placeholder="Min" placeholderTextColor={theme.colors.placeholder} />
+            <Text style={styles.customSeparator}>:</Text>
+            <TextInput style={styles.customInput} value={customSeconds} onChangeText={setCustomSeconds} keyboardType="number-pad" placeholder="Sec" placeholderTextColor={theme.colors.placeholder} />
+          </View>
+          <SecondaryButton label="Start custom timer" icon="play-outline" onPress={() => beginRevisionMode()} />
+        </Card>
+      ) : null}
+
+      <Animated.View style={[styles.flashcardWrap, { transform: [{ translateX: pan.x }] }]} {...panResponder.panHandlers}>
+        <Card style={styles.flashcard}>
+          <TouchableOpacity style={styles.flashcardTouch} onPress={flipCard} activeOpacity={0.9}>
+            <Text style={styles.faceLabel}>{showBack ? 'ANSWER' : 'QUESTION'}</Text>
+            <Text style={styles.faceText}>{showBack ? currentCard.back : currentCard.front}</Text>
+            <View style={styles.flipHint}><AppIcon name="sync-outline" size={16} color={theme.colors.textMuted} /><Text style={styles.flipHintText}>Tap to flip</Text></View>
+          </TouchableOpacity>
+        </Card>
       </Animated.View>
 
       {showBack ? (
         <View style={styles.answerActions}>
-          <TouchableOpacity style={styles.againButton} onPress={() => markCard(false)}>
-            <Ionicons name="refresh-outline" size={19} color={theme.colors.error} />
-            <Text style={styles.againText}>Again</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.knowButton} onPress={() => markCard(true)}>
-            <Ionicons name="checkmark" size={19} color={theme.colors.primaryText} />
-            <Text style={styles.knowText}>I knew this</Text>
-          </TouchableOpacity>
+          <SecondaryButton label="Again" icon="refresh-outline" onPress={() => markCard(false)} style={styles.answerButton} />
+          <PrimaryButton label="I knew this" icon="checkmark" onPress={() => markCard(true)} style={styles.answerButton} />
         </View>
       ) : (
-        <View style={styles.typeAnswerCard}>
+        <Card style={styles.typeAnswerCard}>
           <Text style={styles.answerLabel}>Or type your answer</Text>
           <TextInput
             style={styles.answerInput}
             value={answerInput}
-            onChangeText={(value) => {
-              setAnswerInput(value);
-              setAnswerChecked(false);
-              setIsCorrect(null);
-            }}
+            onChangeText={(value) => { setAnswerInput(value); setAnswerChecked(false); setIsCorrect(null); }}
             placeholder="Type the answer from memory"
             placeholderTextColor={theme.colors.placeholder}
             onSubmitEditing={checkTypedAnswer}
           />
-          <TouchableOpacity style={styles.checkButton} onPress={checkTypedAnswer}>
-            <Text style={styles.checkButtonText}>Check answer</Text>
-          </TouchableOpacity>
-          {answerChecked ? (
-            <Text style={[styles.answerFeedback, { color: isCorrect ? theme.colors.accent : theme.colors.error }]}>
-              {isCorrect ? 'Correct' : 'Not quite — flip the card to review it.'}
-            </Text>
-          ) : null}
-        </View>
+          <SecondaryButton label="Check answer" onPress={checkTypedAnswer} />
+          {answerChecked ? <Text style={[styles.answerFeedback, { color: isCorrect ? theme.colors.accent : theme.colors.error }]}>{isCorrect ? 'Correct' : 'Not quite — flip the card to review it.'}</Text> : null}
+        </Card>
       )}
 
       <View style={styles.navigationRow}>
-        <TouchableOpacity style={[styles.navButton, index === 0 && styles.navButtonDisabled]} onPress={prevCard} disabled={index === 0}>
-          <Ionicons name="chevron-back" size={19} color={index === 0 ? theme.colors.textMuted : theme.colors.text} />
-          <Text style={[styles.navButtonText, index === 0 && { color: theme.colors.textMuted }]}>Previous</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.navButton} onPress={nextCard}>
-          <Text style={styles.navButtonText}>Skip</Text>
-          <Ionicons name="chevron-forward" size={19} color={theme.colors.text} />
-        </TouchableOpacity>
+        <TouchableOpacity style={styles.navButton} onPress={prevCard} disabled={index === 0}><AppIcon name="chevron-back" size={19} color={index === 0 ? theme.colors.textMuted : theme.colors.text} /><Text style={[styles.navButtonText, index === 0 && styles.navDisabled]}>Previous</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.navButton} onPress={nextCard}><Text style={styles.navButtonText}>Skip</Text><AppIcon name="chevron-forward" size={19} color={theme.colors.text} /></TouchableOpacity>
       </View>
 
-      {showTimerSetup ? (
-        <View style={styles.timerSetupCard}>
-          <Text style={styles.timerSetupTitle}>Timed revision</Text>
-          <Text style={styles.timerSetupText}>Set a total session time, then work through as many cards as you can.</Text>
-          <View style={styles.timerPresetRow}>
-            {[30, 60, 120].map((seconds) => (
-              <TouchableOpacity
-                key={seconds}
-                style={[styles.timerPreset, !useCustomTime && timeLimit === seconds && styles.timerPresetActive]}
-                onPress={() => {
-                  setUseCustomTime(false);
-                  setTimeLimit(seconds);
-                }}
-              >
-                <Text style={[styles.timerPresetText, !useCustomTime && timeLimit === seconds && styles.timerPresetTextActive]}>{seconds}s</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <TouchableOpacity style={styles.customTimeToggle} onPress={() => setUseCustomTime((value) => !value)}>
-            <Text style={styles.customTimeToggleText}>{useCustomTime ? 'Use preset time' : 'Custom time'}</Text>
-          </TouchableOpacity>
-          {useCustomTime ? (
-            <View style={styles.customTimeRow}>
-              <TextInput
-                style={styles.customTimeInput}
-                value={customMinutes}
-                onChangeText={setCustomMinutes}
-                keyboardType="number-pad"
-                placeholder="Min"
-                placeholderTextColor={theme.colors.placeholder}
-              />
-              <TextInput
-                style={styles.customTimeInput}
-                value={customSeconds}
-                onChangeText={setCustomSeconds}
-                keyboardType="number-pad"
-                placeholder="Sec"
-                placeholderTextColor={theme.colors.placeholder}
-              />
-            </View>
-          ) : null}
-          <View style={styles.timerSetupActions}>
-            <TouchableOpacity style={styles.timerCancelButton} onPress={() => setShowTimerSetup(false)}>
-              <Text style={styles.timerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.timerStartButton} onPress={beginRevisionMode}>
-              <Text style={styles.timerStartText}>Start timer</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : null}
+      <Text style={styles.swipeHint}>Swipe right for known · left for again</Text>
     </ScreenLayout>
   );
 }
 
 const getStyles = (theme) => StyleSheet.create({
-  content: { paddingBottom: 36 },
-  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
-  centerStateText: { fontFamily: 'Poppins_400Regular', fontSize: 13, color: theme.colors.textSecondary },
-  emptyTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 17, color: theme.colors.text },
-  progressHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  progressLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.textSecondary },
-  progressPercent: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
-  progressTrack: { height: 7, borderRadius: 99, backgroundColor: theme.colors.surfaceMuted, overflow: 'hidden', marginTop: 8, marginBottom: 18 },
-  progressFill: { height: '100%', borderRadius: 99, backgroundColor: theme.colors.primary },
-  revisionLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 14, backgroundColor: theme.colors.primarySoft, marginBottom: 14 },
-  revisionLinkText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
-  timerCard: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 16, backgroundColor: theme.colors.primarySoft, paddingHorizontal: 14, marginBottom: 14 },
+  content: { paddingBottom: spacing.xxxl },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.md, paddingVertical: spacing.xxl },
+  centerText: { fontFamily: typography.regular, color: theme.colors.textSecondary },
+  emptyTitle: { fontFamily: typography.semibold, fontSize: 16, color: theme.colors.text },
+  completeCard: { alignItems: 'center', paddingVertical: spacing.xxl },
+  completeTitle: { fontFamily: typography.bold, fontSize: 22, color: theme.colors.text, marginTop: spacing.md },
+  completeText: { fontFamily: typography.regular, fontSize: 12, color: theme.colors.textSecondary, textAlign: 'center', marginTop: spacing.xs },
+  completeStats: { width: '100%', flexDirection: 'row', gap: spacing.sm, marginVertical: spacing.xl },
+  completeStat: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.colors.separator },
+  completeStatValue: { fontFamily: typography.bold, fontSize: 22, color: theme.colors.text },
+  completeStatLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary, marginTop: 2 },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.xs },
+  progressLabel: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.textSecondary },
+  progressPercent: { fontFamily: typography.semibold, fontSize: 11, color: theme.colors.primary },
+  timerCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   timerCopy: { flex: 1 },
-  timerLabel: { fontFamily: 'Poppins_400Regular', fontSize: 10, color: theme.colors.textSecondary },
-  timerValue: { fontFamily: 'Poppins_700Bold', fontSize: 18, color: theme.colors.text },
-  flashcard: { minHeight: 310, borderRadius: 26, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, shadowColor: '#111827', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.06, shadowRadius: 18, elevation: 2 },
-  flashcardTouch: { minHeight: 310, alignItems: 'center', justifyContent: 'center', padding: 28 },
-  faceLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, letterSpacing: 1, color: theme.colors.primary, marginBottom: 14 },
-  faceText: { fontFamily: 'Poppins_600SemiBold', fontSize: 24, lineHeight: 34, color: theme.colors.text, textAlign: 'center' },
-  flipHint: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 26 },
-  flipHintText: { fontFamily: 'Poppins_400Regular', fontSize: 11, color: theme.colors.textMuted },
-  answerActions: { flexDirection: 'row', gap: 10, marginTop: 14 },
-  againButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: `${theme.colors.error}10` },
-  againText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.error },
-  knowButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 16, backgroundColor: theme.colors.primary },
-  knowText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.primaryText },
-  typeAnswerCard: { marginTop: 14, borderRadius: 20, padding: 14, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
-  answerLabel: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.textSecondary, marginBottom: 7 },
-  answerInput: { minHeight: 48, borderRadius: 14, backgroundColor: theme.colors.input, paddingHorizontal: 14, fontFamily: 'Poppins_400Regular', fontSize: 13, color: theme.colors.text },
-  checkButton: { alignSelf: 'flex-end', marginTop: 10, minHeight: 40, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 12, backgroundColor: theme.colors.primarySoft },
-  checkButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primary },
-  answerFeedback: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, marginTop: 8 },
-  navigationRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginTop: 14 },
-  navButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12 },
-  navButtonDisabled: { opacity: 0.5 },
-  navButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.text },
-  completeCard: { alignItems: 'center', borderRadius: 26, padding: 30, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
-  completeIcon: { width: 62, height: 62, borderRadius: 21, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.accentSoft },
-  completeTitle: { fontFamily: 'Poppins_700Bold', fontSize: 22, color: theme.colors.text, marginTop: 16 },
-  completeText: { fontFamily: 'Poppins_400Regular', fontSize: 12, lineHeight: 18, color: theme.colors.textSecondary, textAlign: 'center', marginTop: 6 },
-  completeStats: { width: '100%', flexDirection: 'row', gap: 10, marginTop: 22 },
-  completeStat: { flex: 1, borderRadius: 16, backgroundColor: theme.colors.surfaceMuted, padding: 14, alignItems: 'center' },
-  completeStatValue: { fontFamily: 'Poppins_700Bold', fontSize: 20, color: theme.colors.text },
-  completeStatLabel: { fontFamily: 'Poppins_400Regular', fontSize: 10, color: theme.colors.textSecondary, marginTop: 2 },
-  doneButton: { marginTop: 20, minHeight: 50, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, borderRadius: 15, backgroundColor: theme.colors.primary },
-  doneButtonText: { fontFamily: 'Poppins_600SemiBold', fontSize: 13, color: theme.colors.primaryText },
-  timerSetupCard: { marginTop: 14, borderRadius: 20, padding: 16, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
-  timerSetupTitle: { fontFamily: 'Poppins_600SemiBold', fontSize: 16, color: theme.colors.text },
-  timerSetupText: { fontFamily: 'Poppins_400Regular', fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary, marginTop: 3 },
-  timerPresetRow: { flexDirection: 'row', gap: 8, marginTop: 14 },
-  timerPreset: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: theme.colors.surfaceMuted },
-  timerPresetActive: { backgroundColor: theme.colors.primary },
-  timerPresetText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.textSecondary },
-  timerPresetTextActive: { color: theme.colors.primaryText },
-  customTimeToggle: { alignSelf: 'flex-start', marginTop: 12 },
-  customTimeToggleText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.primary },
-  customTimeRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  customTimeInput: { flex: 1, minHeight: 44, borderRadius: 13, backgroundColor: theme.colors.input, paddingHorizontal: 12, fontFamily: 'Poppins_400Regular', fontSize: 12, color: theme.colors.text },
-  timerSetupActions: { flexDirection: 'row', gap: 8, marginTop: 16 },
-  timerCancelButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: theme.colors.surfaceMuted },
-  timerCancelText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.textSecondary },
-  timerStartButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: theme.colors.primary },
-  timerStartText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primaryText },
+  timerLabel: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textSecondary },
+  timerValue: { fontFamily: typography.bold, fontSize: 18, color: theme.colors.text, marginTop: 1 },
+  revisionLink: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, marginTop: spacing.sm },
+  revisionLinkText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.primary },
+  timerSetupCard: { marginTop: spacing.sm },
+  timerSetupTitle: { fontFamily: typography.semibold, fontSize: 15, color: theme.colors.text },
+  timerSetupText: { fontFamily: typography.regular, fontSize: 11, lineHeight: 16, color: theme.colors.textSecondary, marginTop: 2 },
+  presetRow: { flexDirection: 'row', gap: spacing.xs, marginVertical: spacing.md },
+  presetButton: { flex: 1, minHeight: 42, borderRadius: radius.md, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center' },
+  presetText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.text },
+  customRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
+  customInput: { flex: 1, minHeight: 46, borderRadius: radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.input, paddingHorizontal: spacing.md, textAlign: 'center', fontFamily: typography.semibold, color: theme.colors.text },
+  customSeparator: { fontFamily: typography.bold, color: theme.colors.textSecondary },
+  flashcardWrap: { marginTop: spacing.xl },
+  flashcard: { minHeight: 330, padding: 0 },
+  flashcardTouch: { flex: 1, minHeight: 330, alignItems: 'center', justifyContent: 'center', padding: spacing.xl },
+  faceLabel: { fontFamily: typography.semibold, fontSize: 11, letterSpacing: 1, color: theme.colors.primary },
+  faceText: { fontFamily: typography.semibold, fontSize: 24, lineHeight: 34, color: theme.colors.text, textAlign: 'center', marginTop: spacing.lg },
+  flipHint: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.xxl },
+  flipHintText: { fontFamily: typography.regular, fontSize: 11, color: theme.colors.textMuted },
+  answerActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  answerButton: { flex: 1 },
+  typeAnswerCard: { marginTop: spacing.md },
+  answerLabel: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.textSecondary, marginBottom: spacing.xs },
+  answerInput: { minHeight: 52, borderRadius: radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.input, paddingHorizontal: spacing.md, fontFamily: typography.regular, fontSize: 14, color: theme.colors.text, marginBottom: spacing.sm },
+  answerFeedback: { fontFamily: typography.semibold, fontSize: 12, marginTop: spacing.sm },
+  navigationRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg },
+  navButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  navButtonText: { fontFamily: typography.semibold, fontSize: 12, color: theme.colors.text },
+  navDisabled: { color: theme.colors.textMuted },
+  swipeHint: { fontFamily: typography.regular, fontSize: 10, color: theme.colors.textMuted, textAlign: 'center', marginTop: spacing.sm },
 });
