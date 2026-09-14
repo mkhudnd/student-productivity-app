@@ -18,10 +18,10 @@ import RegisterScreen from '../screens/Auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/Auth/ForgotPasswordScreen';
 
 import TodayScreen from '../screens/TodayScreen';
+import PlanScreen from '../screens/PlanScreen';
 import DeckListScreen from '../screens/Flashcards/DeckListScreen';
 import DeckEditorScreen from '../screens/Flashcards/DeckEditorScreen';
 import StudyScreen from '../screens/Flashcards/StudyScreen';
-import PlannerScreen from '../screens/Planner/PlannerScreen';
 import StudyTrackerScreen from '../screens/Tracker/StudyTrackerScreen';
 import SettingsScreen from '../screens/Settings/SettingsScreen';
 import AnalyticsScreen from '../screens/Settings/AnalyticsScreen';
@@ -78,7 +78,7 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Home" component={TodayScreen} />
-      <Tab.Screen name="Planner" component={PlannerScreen} />
+      <Tab.Screen name="Planner" component={PlanScreen} />
       <Tab.Screen name="Tracker" component={StudyTrackerScreen} />
       <Tab.Screen name="Flashcards" component={DeckListScreen} />
       <Tab.Screen name="Progress" component={AnalyticsScreen} />
