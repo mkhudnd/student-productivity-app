@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, PanResponder, Animated, Dimensions, TextInput } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, PanResponder, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../context/ThemeContext';
 import { useUser } from '../../context/UserContext';
@@ -7,40 +7,32 @@ import { FlashcardService } from '../../utils/flashcardService';
 import { localDateKey } from '../../utils/planRepository';
 import ScreenLayout from '../../components/ScreenLayout';
 
-const FLASHCARDS_FILE = 'flashcards.json';
-const SCREEN_WIDTH = Dimensions.get('window').width;
-
-function getTodayISO() {
-  return localDateKey();
-}
-
 function getDueCards(deck) {
-  const today = getTodayISO();
-  return deck.cards.filter(card => !card.dueDate || card.dueDate <= today);
+  const today = localDateKey();
+  return (deck?.cards || []).filter((card) => !card.dueDate || card.dueDate <= today);
 }
 
 function getProgress(deck) {
-  if (!deck || !deck.cards.length) return { known: 0, studied: 0, total: 0, percent: 0 };
-  const known = deck.cards.filter(card => card.known).length;
-  const studied = deck.cards.filter(card => card.known !== undefined).length;
+  if (!deck?.cards?.length) return { known: 0, total: 0, percent: 0 };
+  const known = deck.cards.filter((card) => card.known).length;
   const total = deck.cards.length;
-  const percent = Math.round((known / total) * 100);
-  return { known, studied, total, percent };
+  return { known, total, percent: Math.round((known / total) * 100) };
 }
 
 function updateSRS(card, correct) {
   let { interval = 1, repetitions = 0, easeFactor = 2.5 } = card;
-  let quality = correct ? 5 : 2;
+  const quality = correct ? 5 : 2;
   if (correct) {
-    repetitions = (repetitions || 0) + 1;
+    repetitions += 1;
     if (repetitions === 1) interval = 1;
     else if (repetitions === 2) interval = 6;
-    else interval = Math.round(interval * easeFactor);
+    else interval = Math.max(1, Math.round(interval * easeFactor));
     easeFactor = Math.max(1.3, easeFactor + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
   } else {
     repetitions = 0;
     interval = 1;
   }
+
   const nextDue = new Date();
   nextDue.setDate(nextDue.getDate() + interval);
   return {
@@ -49,239 +41,168 @@ function updateSRS(card, correct) {
     repetitions,
     easeFactor,
     dueDate: localDateKey(nextDue),
-    lastStudied: getTodayISO(),
+    lastStudied: localDateKey(),
     known: correct,
+    reviewCount: Number(card.reviewCount || 0) + 1,
   };
 }
 
 export default function StudyScreen({ route, navigation }) {
-  if (!navigation) {
-    console.error('StudyScreen: Navigation prop is undefined');
-    return null;
-  }
-  if (typeof navigation.goBack !== 'function') {
-    console.error('StudyScreen: navigation.goBack is not a function', navigation);
-  }
-
-  const safeGoBack = () => {
-    try {
-      if (navigation && typeof navigation.goBack === 'function') {
-        navigation.goBack();
-      } else if (navigation && typeof navigation.navigate === 'function') {
-        navigation.navigate('Flashcards');
-      } else {
-        console.error('No valid navigation method available');
-      }
-    } catch (error) {
-      console.error('Navigation error:', error);
-    }
-  };
-
   const { theme } = useTheme();
   const { currentUser } = useUser();
+  const styles = getStyles(theme);
   const { deckId, studyAll = false } = route?.params || {};
   const [deck, setDeck] = useState(null);
+  const [queue, setQueue] = useState([]);
   const [index, setIndex] = useState(0);
   const [showBack, setShowBack] = useState(false);
   const [loading, setLoading] = useState(true);
   const [answerInput, setAnswerInput] = useState('');
   const [answerChecked, setAnswerChecked] = useState(false);
   const [isCorrect, setIsCorrect] = useState(null);
-  const pan = useRef(new Animated.ValueXY()).current;
-  const [dueCards, setDueCards] = useState([]);
-  const [incorrectCards, setIncorrectCards] = useState([]);
   const [sessionComplete, setSessionComplete] = useState(false);
-  const scrollViewRef = useRef(null);
   const [revisionMode, setRevisionMode] = useState(false);
-  const [timeLimit, setTimeLimit] = useState(30);
-  const [timeRemaining, setTimeRemaining] = useState(30);
+  const [timeLimit, setTimeLimit] = useState(60);
+  const [timeRemaining, setTimeRemaining] = useState(60);
   const [timerActive, setTimerActive] = useState(false);
   const [showTimerSetup, setShowTimerSetup] = useState(false);
-  const timerRef = useRef(null);
   const [useCustomTime, setUseCustomTime] = useState(false);
   const [customMinutes, setCustomMinutes] = useState('2');
   const [customSeconds, setCustomSeconds] = useState('0');
-  const [showFloatingTimer, setShowFloatingTimer] = useState(false);
-  const [sessionStats, setSessionStats] = useState({
-    totalAnswered: 0,
-    correctAnswers: 0,
-    incorrectAnswers: 0,
-    timeoutAnswers: 0,
-    totalTime: 0,
-    averageTime: 0
-  });
+  const [sessionStats, setSessionStats] = useState({ correct: 0, incorrect: 0, reviewed: 0 });
   const [navigationLocked, setNavigationLocked] = useState(false);
+  const pan = useRef(new Animated.ValueXY()).current;
+  const timerRef = useRef(null);
 
   useEffect(() => {
     loadDeck();
-  }, []);
+  }, [deckId, currentUser?.email]);
 
   useEffect(() => {
     setAnswerInput('');
     setAnswerChecked(false);
     setIsCorrect(null);
     setShowBack(false);
-    if (studyAll) {
-      setDueCards((deck && deck.cards) ? deck.cards : []);
-    } else {
-      setDueCards(getDueCards(deck || { cards: [] }));
-    }
-  }, [index, deck]);
+    pan.setValue({ x: 0, y: 0 });
+  }, [index]);
 
   useEffect(() => {
     if (revisionMode && timerActive && timeRemaining > 0) {
-      timerRef.current = setTimeout(() => {
-        setTimeRemaining(prev => prev - 1);
-      }, 1000);
+      timerRef.current = setTimeout(() => setTimeRemaining((value) => value - 1), 1000);
     } else if (revisionMode && timeRemaining === 0) {
-      handleSessionTimeOut();
+      setTimerActive(false);
+      setSessionComplete(true);
     }
-
     return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [revisionMode, timerActive, timeRemaining]);
 
-  const handleScroll = (event) => {
-    const currentScrollY = event.nativeEvent.contentOffset.y;
-    if (revisionMode && currentScrollY > 200) {
-      setShowFloatingTimer(true);
-    } else {
-      setShowFloatingTimer(false);
-    }
-  };
-
   async function loadDeck() {
     setLoading(true);
-    const found = await FlashcardService.getDeck(deckId, currentUser);
-    setDeck(found);
-    setIndex(0);
-    setLoading(false);
-    if (studyAll) {
-      setDueCards((found && found.cards) ? found.cards : []);
-    } else {
-      setDueCards(getDueCards(found || { cards: [] }));
+    try {
+      const found = await FlashcardService.getDeck(deckId, currentUser);
+      setDeck(found);
+      const initialQueue = found ? (studyAll ? [...(found.cards || [])] : getDueCards(found)) : [];
+      setQueue(initialQueue);
+      setIndex(0);
+      setSessionComplete(false);
+    } finally {
+      setLoading(false);
     }
   }
 
-  function startRevisionMode() {
-    setShowTimerSetup(false);
-    setRevisionMode(true);
-    setTimeRemaining(timeLimit);
+  function beginRevisionMode() {
+    const customDuration = Math.max(1, Number(customMinutes || 0) * 60 + Number(customSeconds || 0));
+    const duration = useCustomTime ? customDuration : timeLimit;
+    setTimeLimit(duration);
+    setTimeRemaining(duration);
     setTimerActive(true);
-    setShowFloatingTimer(false);
-    setSessionStats({
-      totalAnswered: 0,
-      correctAnswers: 0,
-      incorrectAnswers: 0,
-      timeoutAnswers: 0,
-      totalTime: 0,
-      averageTime: 0
-    });
-  }
-
-  function handleSessionTimeOut() {
-    setTimerActive(false);
-    setShowFloatingTimer(false);
-    setSessionComplete(true);
+    setRevisionMode(true);
+    setShowTimerSetup(false);
+    setSessionStats({ correct: 0, incorrect: 0, reviewed: 0 });
   }
 
   function flipCard() {
-    setShowBack(!showBack);
+    setShowBack((value) => !value);
   }
 
   function nextCard() {
-    if (navigationLocked) return;
+    if (navigationLocked || queue.length === 0) return;
+    setNavigationLocked(true);
+    if (index < queue.length - 1) {
+      setIndex((value) => value + 1);
+    } else {
+      setSessionComplete(true);
+      setTimerActive(false);
+    }
+    setTimeout(() => setNavigationLocked(false), 250);
+  }
 
+  function prevCard() {
+    if (index > 0) setIndex((value) => value - 1);
+  }
+
+  async function markCard(correct) {
+    const currentCard = queue[index];
+    if (!currentCard || navigationLocked) return;
+    setNavigationLocked(true);
     try {
-      setNavigationLocked(true);
-      setShowBack(false);
-      if (!dueCards || !Array.isArray(dueCards)) {
-        console.error('dueCards is not a valid array:', dueCards);
-        setNavigationLocked(false);
-        return;
-      }
-      if (index < dueCards.length - 1) {
-        setIndex(prev => prev + 1);
-      } else {
-        setTimerActive(false);
-        setShowFloatingTimer(false);
+      const updatedCard = updateSRS(currentCard, correct);
+      const saved = await FlashcardService.updateCard(deckId, currentCard.id, updatedCard, currentUser);
+      if (!saved) throw new Error('Card update failed.');
+
+      setDeck((current) => ({
+        ...current,
+        cards: (current?.cards || []).map((card) => (card.id === currentCard.id ? saved : card)),
+      }));
+      setSessionStats((current) => ({
+        reviewed: current.reviewed + 1,
+        correct: current.correct + (correct ? 1 : 0),
+        incorrect: current.incorrect + (correct ? 0 : 1),
+      }));
+
+      const nextQueue = queue.filter((card) => card.id !== currentCard.id);
+      setQueue(nextQueue);
+      if (nextQueue.length === 0) {
         setSessionComplete(true);
+        setTimerActive(false);
+        setIndex(0);
+      } else {
+        setIndex((currentIndex) => Math.min(currentIndex, nextQueue.length - 1));
       }
-      if (pan && typeof pan.setValue === 'function') {
-        pan.setValue({ x: 0, y: 0 });
-      }
+      setShowBack(false);
       setAnswerInput('');
       setAnswerChecked(false);
       setIsCorrect(null);
-      setTimeout(() => setNavigationLocked(false), 300);
+      pan.setValue({ x: 0, y: 0 });
     } catch (error) {
-      console.error('Error in nextCard:', error);
+      console.error('Could not update flashcard review:', error);
+    } finally {
       setNavigationLocked(false);
     }
   }
 
-  function prevCard() {
-    if (index > 0) {
-      setIndex(prev => prev - 1);
-      setShowBack(false);
-      pan.setValue({ x: 0, y: 0 });
-      setAnswerInput('');
-      setAnswerChecked(false);
-      setIsCorrect(null);
-    }
-  }
-
-  async function markCard(correct) {
-    if (!dueCards.length || !dueCards[index]) return;
-    const currentCard = dueCards[index];
-    const updatedCard = updateSRS(currentCard, correct);
-    await FlashcardService.updateCard(deckId, currentCard.id, updatedCard, currentUser);
-    if (!correct) {
-      setIncorrectCards(prev => [...prev, currentCard]);
-    }
-    setSessionStats(prev => ({
-      ...prev,
-      totalAnswered: prev.totalAnswered + 1,
-      correctAnswers: prev.correctAnswers + (correct ? 1 : 0),
-      incorrectAnswers: prev.incorrectAnswers + (correct ? 0 : 1),
-    }));
-    await loadDeck();
-    nextCard();
-  }
-
   function checkTypedAnswer() {
-    if (!dueCards.length || !dueCards[index]) return;
-    const normalizedExpected = String(dueCards[index].back || '').trim().toLowerCase();
-    const normalizedAnswer = answerInput.trim().toLowerCase();
-    const correct = Boolean(normalizedAnswer) && normalizedExpected === normalizedAnswer;
+    const currentCard = queue[index];
+    if (!currentCard) return;
+    const expected = String(currentCard.back || '').trim().toLowerCase();
+    const provided = answerInput.trim().toLowerCase();
     setAnswerChecked(true);
-    setIsCorrect(correct);
+    setIsCorrect(Boolean(provided) && provided === expected);
   }
 
-  const currentCard = dueCards[index];
+  const currentCard = queue[index];
   const progress = getProgress(deck);
-
   const panResponder = PanResponder.create({
     onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 14,
     onPanResponderMove: Animated.event([null, { dx: pan.x }], { useNativeDriver: false }),
     onPanResponderRelease: (_, gesture) => {
-      if (gesture.dx > 90) {
-        markCard(true);
-      } else if (gesture.dx < -90) {
-        markCard(false);
-      } else {
-        Animated.spring(pan, {
-          toValue: { x: 0, y: 0 },
-          useNativeDriver: false,
-        }).start();
-      }
+      if (gesture.dx > 90) markCard(true);
+      else if (gesture.dx < -90) markCard(false);
+      else Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false }).start();
     },
   });
-
-  const styles = getStyles(theme);
 
   if (loading) {
     return (
@@ -298,8 +219,8 @@ export default function StudyScreen({ route, navigation }) {
     return (
       <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation}>
         <View style={styles.centerState}>
-          <Text style={styles.emptyTitle}>Deck not found</Text>
-          <TouchableOpacity style={styles.doneButton} onPress={safeGoBack}>
+          <Text style={styles.emptyTitle}>Learning set not found</Text>
+          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.goBack()}>
             <Text style={styles.doneButtonText}>Go back</Text>
           </TouchableOpacity>
         </View>
@@ -307,17 +228,17 @@ export default function StudyScreen({ route, navigation }) {
     );
   }
 
-  if (sessionComplete || dueCards.length === 0) {
+  if (sessionComplete || queue.length === 0) {
     return (
       <ScreenLayout showHeader headerTitle="Study" showBackButton navigation={navigation} scrollable>
         <View style={styles.completeCard}>
           <View style={styles.completeIcon}>
             <Ionicons name="checkmark-circle" size={34} color={theme.colors.accent} />
           </View>
-          <Text style={styles.completeTitle}>{dueCards.length === 0 && !sessionComplete ? 'Nothing due right now' : 'Review complete'}</Text>
+          <Text style={styles.completeTitle}>{queue.length === 0 && sessionStats.reviewed === 0 ? 'Nothing due right now' : 'Review complete'}</Text>
           <Text style={styles.completeText}>
-            {sessionStats.totalAnswered > 0
-              ? `${sessionStats.correctAnswers} correct · ${sessionStats.incorrectAnswers} to revisit`
+            {sessionStats.reviewed > 0
+              ? `${sessionStats.correct} correct · ${sessionStats.incorrect} to revisit`
               : 'You are caught up with this learning set.'}
           </Text>
           <View style={styles.completeStats}>
@@ -330,7 +251,7 @@ export default function StudyScreen({ route, navigation }) {
               <Text style={styles.completeStatLabel}>Cards</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.doneButton} onPress={safeGoBack}>
+          <TouchableOpacity style={styles.doneButton} onPress={() => navigation.goBack()}>
             <Text style={styles.doneButtonText}>Done</Text>
           </TouchableOpacity>
         </View>
@@ -348,11 +269,11 @@ export default function StudyScreen({ route, navigation }) {
       contentContainerStyle={styles.content}
     >
       <View style={styles.progressHeader}>
-        <Text style={styles.progressLabel}>Card {index + 1} of {dueCards.length}</Text>
+        <Text style={styles.progressLabel}>Card {index + 1} of {queue.length}</Text>
         <Text style={styles.progressPercent}>{progress.percent}% mastered</Text>
       </View>
       <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${dueCards.length ? ((index + 1) / dueCards.length) * 100 : 0}%` }]} />
+        <View style={[styles.progressFill, { width: `${queue.length ? ((index + 1) / queue.length) * 100 : 0}%` }]} />
       </View>
 
       {revisionMode ? (
@@ -362,7 +283,7 @@ export default function StudyScreen({ route, navigation }) {
             <Text style={styles.timerLabel}>Revision timer</Text>
             <Text style={styles.timerValue}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text>
           </View>
-          <TouchableOpacity onPress={() => setTimerActive(value => !value)}>
+          <TouchableOpacity onPress={() => setTimerActive((value) => !value)}>
             <Ionicons name={timerActive ? 'pause-circle-outline' : 'play-circle-outline'} size={28} color={theme.colors.primary} />
           </TouchableOpacity>
         </View>
@@ -373,10 +294,7 @@ export default function StudyScreen({ route, navigation }) {
         </TouchableOpacity>
       )}
 
-      <Animated.View
-        style={[styles.flashcard, { transform: [{ translateX: pan.x }] }]}
-        {...panResponder.panHandlers}
-      >
+      <Animated.View style={[styles.flashcard, { transform: [{ translateX: pan.x }] }]} {...panResponder.panHandlers}>
         <TouchableOpacity style={styles.flashcardTouch} onPress={flipCard} activeOpacity={0.9}>
           <Text style={styles.faceLabel}>{showBack ? 'ANSWER' : 'QUESTION'}</Text>
           <Text style={styles.faceText}>{showBack ? currentCard.back : currentCard.front}</Text>
@@ -417,7 +335,7 @@ export default function StudyScreen({ route, navigation }) {
             <Text style={styles.checkButtonText}>Check answer</Text>
           </TouchableOpacity>
           {answerChecked ? (
-            <Text style={[styles.answerFeedback, { color: isCorrect ? theme.colors.accent : theme.colors.error }]}> 
+            <Text style={[styles.answerFeedback, { color: isCorrect ? theme.colors.accent : theme.colors.error }]}>
               {isCorrect ? 'Correct' : 'Not quite — flip the card to review it.'}
             </Text>
           ) : null}
@@ -440,21 +358,21 @@ export default function StudyScreen({ route, navigation }) {
           <Text style={styles.timerSetupTitle}>Timed revision</Text>
           <Text style={styles.timerSetupText}>Set a total session time, then work through as many cards as you can.</Text>
           <View style={styles.timerPresetRow}>
-            {[30, 60, 120].map(seconds => (
+            {[30, 60, 120].map((seconds) => (
               <TouchableOpacity
                 key={seconds}
-                style={[styles.timerPreset, timeLimit === seconds && styles.timerPresetActive]}
+                style={[styles.timerPreset, !useCustomTime && timeLimit === seconds && styles.timerPresetActive]}
                 onPress={() => {
                   setUseCustomTime(false);
                   setTimeLimit(seconds);
                 }}
               >
-                <Text style={[styles.timerPresetText, timeLimit === seconds && styles.timerPresetTextActive]}>{seconds}s</Text>
+                <Text style={[styles.timerPresetText, !useCustomTime && timeLimit === seconds && styles.timerPresetTextActive]}>{seconds}s</Text>
               </TouchableOpacity>
             ))}
           </View>
-          <TouchableOpacity style={styles.customTimeToggle} onPress={() => setUseCustomTime(value => !value)}>
-            <Text style={styles.customTimeToggleText}>Custom time</Text>
+          <TouchableOpacity style={styles.customTimeToggle} onPress={() => setUseCustomTime((value) => !value)}>
+            <Text style={styles.customTimeToggleText}>{useCustomTime ? 'Use preset time' : 'Custom time'}</Text>
           </TouchableOpacity>
           {useCustomTime ? (
             <View style={styles.customTimeRow}>
@@ -480,27 +398,10 @@ export default function StudyScreen({ route, navigation }) {
             <TouchableOpacity style={styles.timerCancelButton} onPress={() => setShowTimerSetup(false)}>
               <Text style={styles.timerCancelText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.timerStartButton}
-              onPress={() => {
-                if (useCustomTime) {
-                  const seconds = Math.max(1, Number(customMinutes || 0) * 60 + Number(customSeconds || 0));
-                  setTimeLimit(seconds);
-                  setTimeRemaining(seconds);
-                }
-                startRevisionMode();
-              }}
-            >
+            <TouchableOpacity style={styles.timerStartButton} onPress={beginRevisionMode}>
               <Text style={styles.timerStartText}>Start timer</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      ) : null}
-
-      {showFloatingTimer && revisionMode ? (
-        <View style={styles.floatingTimer}>
-          <Ionicons name="timer" size={16} color={theme.colors.primary} />
-          <Text style={styles.floatingTimerText}>{Math.floor(timeRemaining / 60)}:{String(timeRemaining % 60).padStart(2, '0')}</Text>
         </View>
       ) : null}
     </ScreenLayout>
@@ -571,6 +472,4 @@ const getStyles = (theme) => StyleSheet.create({
   timerCancelText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.textSecondary },
   timerStartButton: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: theme.colors.primary },
   timerStartText: { fontFamily: 'Poppins_600SemiBold', fontSize: 12, color: theme.colors.primaryText },
-  floatingTimer: { position: 'absolute', right: 14, top: 14, flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7, backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border },
-  floatingTimerText: { fontFamily: 'Poppins_600SemiBold', fontSize: 11, color: theme.colors.primary },
 });
