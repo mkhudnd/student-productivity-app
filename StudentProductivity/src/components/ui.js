@@ -6,22 +6,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import AppIcon from './AppIcon';
 import { useTheme } from '../context/ThemeContext';
 import { layout, radius, shadow, spacing, typography } from '../theme/designSystem';
 
-export function AppIcon({ name, size = 20, color, style, accessibilityLabel }) {
-  const { theme } = useTheme();
-  return (
-    <Ionicons
-      name={name}
-      size={size}
-      color={color || theme.colors.textSecondary}
-      style={style}
-      accessibilityLabel={accessibilityLabel}
-    />
-  );
-}
+export { AppIcon };
 
 export function IconButton({ icon, onPress, color, size = 22, disabled = false, accessibilityLabel, style }) {
   const { theme } = useTheme();
